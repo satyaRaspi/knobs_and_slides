@@ -1,8 +1,8 @@
-# Knobs and Slides Studio 1.2.4 — Railway Docker Frontend Build Fixed
+# Knobs and Slides Studio 1.2.9 — Railway Docker Frontend Build Fixed
 
 This build fixes the Railway deployment issues seen in the earlier Nixpacks builds.
 
-## What changed in 1.2.4
+## What changed in 1.2.9
 
 - Uses a `Dockerfile` for Railway deployment.
 - Avoids the Railway/Nixpacks `pip: command not found` issue.
@@ -20,7 +20,7 @@ This build fixes the Railway deployment issues seen in the earlier Nixpacks buil
 
 ```bash
 git add .
-git commit -m "Release Knobs and Slides Studio 1.2.4 Railway Docker Frontend Build Fixed"
+git commit -m "Release Knobs and Slides Studio 1.2.9 Railway Docker Frontend Build Fixed"
 git push
 ```
 
@@ -100,11 +100,11 @@ The API health endpoint is:
 ## Version
 
 ```text
-Knobs and Slides Studio 1.2.4 — Railway Docker Frontend Build Fixed
+Knobs and Slides Studio 1.2.9 — Railway Docker Frontend Build Fixed
 ```
 
 
-## Railway Build Fix in 1.2.4
+## Railway Build Fix in 1.2.9
 
 This version fixes the Railway Docker error where `/frontend/dist` was not found. The React frontend is now built inside Docker using a Node build stage, then copied into the final Python/FastAPI image. This means `frontend/dist` does not need to be committed to GitHub.
 
@@ -112,13 +112,13 @@ Railway deployment steps remain the same:
 
 ```bash
 git add .
-git commit -m "Fix Railway Docker frontend build for 1.2.4"
+git commit -m "Fix Railway Docker frontend build for 1.2.9"
 git push
 ```
 
 Railway will rebuild using the included `Dockerfile`.
 
-## Railway 1.2.4 fix
+## Railway 1.2.9 fix
 
 This version uses Docker and builds the React frontend inside the Docker image. The Dockerfile explicitly installs frontend build dependencies using:
 
@@ -128,3 +128,73 @@ npm exec vite -- build
 ```
 
 This fixes Railway build errors where `vite` was not found during `npm run build`.
+
+## Railway 1.2.9 Fix Notes
+
+This build hardens the Docker frontend build:
+
+- Docker copies only `frontend/package.json` before installing dependencies.
+- Docker does not rely on `frontend/package-lock.json`, because generated lock files may contain environment-specific registry URLs.
+- React, ReactDOM, and Vite are verified in local `node_modules` before building.
+- Docker uses `./node_modules/.bin/vite build` instead of `npm exec vite -- build`, preventing npm from downloading a temporary Vite version.
+
+## Version 1.2.9 note — frontend npm install fix
+
+This build removes the generated `frontend/package-lock.json` and `frontend/node_modules` from the ZIP because those can contain machine-specific or registry-specific metadata. The frontend now installs cleanly from the public npm registry.
+
+If `npm install` appears to spin:
+
+Windows:
+```bat
+fix_frontend_install_windows.bat
+```
+
+Mac:
+```bash
+chmod +x fix_frontend_install_mac.command
+./fix_frontend_install_mac.command
+```
+
+Manual command:
+```bash
+cd frontend
+rm -rf node_modules package-lock.json
+npm cache clean --force
+npm config set registry https://registry.npmjs.org/
+npm install --no-audit --no-fund --legacy-peer-deps
+npm run dev
+```
+
+## Windows frontend startup fix in 1.2.9
+
+The Windows frontend startup script now uses `call npm ...` for every npm command. This is important on Windows because npm runs through `npm.cmd`; without `call`, a batch file can stop or behave unpredictably after the first npm command.
+
+If the frontend does not start:
+
+1. Double-click `fix_frontend_install_windows.bat`.
+2. Then double-click `start_frontend_windows.bat`.
+3. Keep the command window open.
+4. Open `http://localhost:5173`.
+
+## 1.2.9 API routing fix
+
+If you see this browser error:
+
+```text
+Unexpected token '<', "<!doctype "... is not valid JSON
+```
+
+it means the frontend received the React HTML page instead of a JSON API response.
+
+This version fixes that by using:
+
+- `http://localhost:8000` automatically during local Vite development
+- same-origin `/api/...` automatically in Railway production
+- clearer error messages if an API route is misconfigured
+
+For local use, keep both windows open:
+
+1. `start_backend_windows.bat`
+2. `start_frontend_windows.bat`
+
+Then open `http://localhost:5173`.

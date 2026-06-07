@@ -1,21 +1,27 @@
-# Knobs and Slides Studio 1.2.4
-# Railway Docker build with explicit frontend dependency install.
+# Knobs and Slides Studio 1.2.8
+# Railway Docker build hardened for React/Vite dependencies.
 
 FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
-# Copy only frontend package metadata first for better Docker caching.
-COPY frontend/package.json frontend/package-lock.json* ./
+# Copy only package.json first. Do NOT copy package-lock.json here because
+# generated lock files can contain environment-specific registry URLs.
+COPY frontend/package.json ./package.json
 
-# Railway may set production install flags in the build environment.
-# Force dev/build dependencies to be installed so vite is available.
-RUN npm ci --include=dev || npm install --include=dev
+# Install both production and dev/build dependencies from the public npm registry.
+# React must be in local node_modules before Vite builds the app.
+RUN npm config set registry https://registry.npmjs.org/ && \
+    npm install --include=dev --no-audit --no-fund --legacy-peer-deps --registry=https://registry.npmjs.org/ && \
+    test -d node_modules/react && \
+    test -d node_modules/react-dom && \
+    test -x node_modules/.bin/vite
 
 COPY frontend/ ./
 
-# Use npm exec so the local vite binary is resolved from node_modules.
-RUN npm exec vite -- build
+# Use the local Vite binary only. This avoids npm/npx downloading a temporary
+# Vite version that cannot see the project's local React dependencies.
+RUN ./node_modules/.bin/vite build
 
 FROM python:3.11-slim
 

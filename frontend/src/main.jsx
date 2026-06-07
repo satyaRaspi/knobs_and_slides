@@ -31,7 +31,7 @@ import {
 import { api, wsUrl } from './api';
 import './styles.css';
 
-const VERSION = '1.2.2';
+const VERSION = '1.2.9';
 
 const tabs = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
