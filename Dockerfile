@@ -1,4 +1,4 @@
-# Knobs and Slides Studio 1.2.11
+# Knobs and Slides Studio 1.2.12
 # Railway Docker build with safer runtime startup.
 
 FROM node:20-alpine AS frontend-builder

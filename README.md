@@ -1,8 +1,8 @@
-# Knobs and Slides Studio 1.2.11 — Railway Docker Frontend Build Fixed
+# Knobs and Slides Studio 1.2.12 — Railway Docker Frontend Build Fixed
 
 This build fixes the Railway deployment issues seen in the earlier Nixpacks builds.
 
-## What changed in 1.2.11
+## What changed in 1.2.12
 
 - Uses a `Dockerfile` for Railway deployment.
 - Avoids the Railway/Nixpacks `pip: command not found` issue.
@@ -20,7 +20,7 @@ This build fixes the Railway deployment issues seen in the earlier Nixpacks buil
 
 ```bash
 git add .
-git commit -m "Release Knobs and Slides Studio 1.2.11 Railway Docker Frontend Build Fixed"
+git commit -m "Release Knobs and Slides Studio 1.2.12 Railway Docker Frontend Build Fixed"
 git push
 ```
 
@@ -100,11 +100,11 @@ The API health endpoint is:
 ## Version
 
 ```text
-Knobs and Slides Studio 1.2.11 — Railway Docker Frontend Build Fixed
+Knobs and Slides Studio 1.2.12 — Railway Docker Frontend Build Fixed
 ```
 
 
-## Railway Build Fix in 1.2.11
+## Railway Build Fix in 1.2.12
 
 This version fixes the Railway Docker error where `/frontend/dist` was not found. The React frontend is now built inside Docker using a Node build stage, then copied into the final Python/FastAPI image. This means `frontend/dist` does not need to be committed to GitHub.
 
@@ -112,13 +112,13 @@ Railway deployment steps remain the same:
 
 ```bash
 git add .
-git commit -m "Fix Railway Docker frontend build for 1.2.11"
+git commit -m "Fix Railway Docker frontend build for 1.2.12"
 git push
 ```
 
 Railway will rebuild using the included `Dockerfile`.
 
-## Railway 1.2.11 fix
+## Railway 1.2.12 fix
 
 This version uses Docker and builds the React frontend inside the Docker image. The Dockerfile explicitly installs frontend build dependencies using:
 
@@ -129,7 +129,7 @@ npm exec vite -- build
 
 This fixes Railway build errors where `vite` was not found during `npm run build`.
 
-## Railway 1.2.11 Fix Notes
+## Railway 1.2.12 Fix Notes
 
 This build hardens the Docker frontend build:
 
@@ -138,7 +138,7 @@ This build hardens the Docker frontend build:
 - React, ReactDOM, and Vite are verified in local `node_modules` before building.
 - Docker uses `./node_modules/.bin/vite build` instead of `npm exec vite -- build`, preventing npm from downloading a temporary Vite version.
 
-## Version 1.2.11 note — frontend npm install fix
+## Version 1.2.12 note — frontend npm install fix
 
 This build removes the generated `frontend/package-lock.json` and `frontend/node_modules` from the ZIP because those can contain machine-specific or registry-specific metadata. The frontend now installs cleanly from the public npm registry.
 
@@ -165,7 +165,7 @@ npm install --no-audit --no-fund --legacy-peer-deps
 npm run dev
 ```
 
-## Windows frontend startup fix in 1.2.11
+## Windows frontend startup fix in 1.2.12
 
 The Windows frontend startup script now uses `call npm ...` for every npm command. This is important on Windows because npm runs through `npm.cmd`; without `call`, a batch file can stop or behave unpredictably after the first npm command.
 
@@ -176,7 +176,7 @@ If the frontend does not start:
 3. Keep the command window open.
 4. Open `http://localhost:5173`.
 
-## 1.2.11 API routing fix
+## 1.2.12 API routing fix
 
 If you see this browser error:
 
@@ -199,7 +199,7 @@ For local use, keep both windows open:
 
 Then open `http://localhost:5173`.
 
-## 1.2.11 Railway health-check fix
+## 1.2.12 Railway health-check fix
 
 This version removes the Railway `startCommand` override and lets Docker run `python start.py`.
 The Python startup script reads Railway's `PORT` variable directly, so the app does not depend on shell expansion of `$PORT`.
@@ -212,7 +212,7 @@ Health endpoints available:
 
 ## Railway service unavailable health-check fix
 
-Version 1.2.11 removes the Railway health-check gate from `railway.json` to avoid deployment failure loops while Railway is starting the container.
+Version 1.2.12 removes the Railway health-check gate from `railway.json` to avoid deployment failure loops while Railway is starting the container.
 
 Important Railway settings:
 
@@ -229,3 +229,15 @@ https://your-railway-url/api/health
 ```
 
 If both return JSON, the app is running correctly.
+
+
+## URL Protection / Login
+
+Default admin login:
+
+```text
+Username: admin
+Password: admin123$
+```
+
+The Railway URL and local app now open with a login screen first. Admin users can create, edit, deactivate, and delete users from the Users page.

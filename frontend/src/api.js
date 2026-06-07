@@ -33,10 +33,22 @@ async function parseResponse(res, path) {
   }
 }
 
+export function getToken() {
+  return localStorage.getItem('knobs_auth_token') || '';
+}
+
+export function setToken(token) {
+  if (token) localStorage.setItem('knobs_auth_token', token);
+  else localStorage.removeItem('knobs_auth_token');
+}
+
 export async function api(path, options = {}) {
   const apiPath = path.startsWith('/') ? path : `/${path}`;
+  const token = getToken();
+  const headers = { 'Content-Type': 'application/json', ...(options.headers || {}) };
+  if (token) headers.Authorization = `Bearer ${token}`;
   const res = await fetch(`${API_BASE}${apiPath}`, {
-    headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+    headers,
     ...options,
   });
   return parseResponse(res, apiPath);

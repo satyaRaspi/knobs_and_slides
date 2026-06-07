@@ -3,7 +3,7 @@ setlocal EnableExtensions
 cd /d "%~dp0frontend"
 
 echo =======================================================
-echo Knobs and Slides Studio 1.2.9 - Frontend Startup
+echo Knobs and Slides Studio 1.2.12 - Frontend Startup
 echo =======================================================
 echo.
 

@@ -10,6 +10,8 @@ import {
   Cpu,
   Gauge,
   Info,
+  Lock,
+  LogOut,
   Grid3X3,
   LayoutDashboard,
   Monitor,
@@ -26,12 +28,14 @@ import {
   Sparkles,
   SunMedium,
   Trash2,
+  UserPlus,
+  Users,
   Zap,
 } from 'lucide-react';
-import { api, wsUrl } from './api';
+import { api, wsUrl, setToken } from './api';
 import './styles.css';
 
-const VERSION = '1.2.11';
+const VERSION = '1.2.12';
 
 const tabs = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -39,6 +43,7 @@ const tabs = [
   { key: 'devices', label: 'Knob Maintenance', icon: Grid3X3 },
   { key: 'profiles', label: 'Profiles', icon: AppWindow },
   { key: 'mappings', label: 'Mappings', icon: SlidersHorizontal },
+  { key: 'users', label: 'Users', icon: Users },
   { key: 'events', label: 'Monitor', icon: Activity },
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
@@ -54,6 +59,8 @@ function App() {
   const [lastEvent, setLastEvent] = useState(null);
   const [error, setError] = useState('');
   const [theme, setTheme] = useState(() => localStorage.getItem('knobs_theme') || 'light');
+  const [authUser, setAuthUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
 
   async function refresh() {
     try {
@@ -78,7 +85,16 @@ function App() {
     }
   }
 
-  useEffect(() => { refresh(); }, []);
+  useEffect(() => {
+    api('/api/auth/me')
+      .then((res) => setAuthUser(res.user))
+      .catch(() => { setToken(''); setAuthUser(null); })
+      .finally(() => setAuthLoading(false));
+  }, []);
+
+  useEffect(() => {
+    if (authUser) refresh();
+  }, [authUser]);
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -99,6 +115,20 @@ function App() {
   }, []);
 
   const activeMappings = mappings.filter((m) => Number(m.is_active) === 1);
+
+  async function logout() {
+    try { await api('/api/auth/logout', { method: 'POST' }); } catch {}
+    setToken('');
+    setAuthUser(null);
+  }
+
+  if (authLoading) {
+    return <div className="loginShell"><div className="loginCard glassCard"><div className="brandGlyph"><Lock size={24} /></div><h1>Loading secure studio…</h1></div></div>;
+  }
+
+  if (!authUser) {
+    return <LoginScreen onLogin={setAuthUser} />;
+  }
 
   return (
     <div className="studioShell">
@@ -140,6 +170,8 @@ function App() {
             <button className="iconButton" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} title="Toggle theme">
               {theme === 'light' ? <Moon size={18} /> : <SunMedium size={18} />}
             </button>
+            <span className="userBadge"><Lock size={14} />{authUser.username}</span>
+            <button className="iconButton" onClick={logout} title="Logout"><LogOut size={18} /></button>
             <button className="refreshButton" onClick={refresh}><RefreshCw size={16} />Refresh</button>
           </div>
         </header>
@@ -151,9 +183,51 @@ function App() {
         {active === 'devices' && <KnobMaintenance devices={devices} mappings={mappings} refresh={refresh} />}
         {active === 'profiles' && <Profiles applications={applications} controls={controls} mappings={mappings} />}
         {active === 'mappings' && <Mappings devices={devices} apps={applications} controls={controls} mappings={mappings} refresh={refresh} />}
+        {active === 'users' && <UserManagement currentUser={authUser} />}
         {active === 'events' && <Events events={events} />}
         {active === 'settings' && <SettingsPanel meta={meta} devices={devices} mappings={activeMappings} />}
       </main>
+    </div>
+  );
+}
+
+function LoginScreen({ onLogin }) {
+  const [username, setUsername] = useState('admin');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      const res = await api('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ username, password }),
+      });
+      setToken(res.token);
+      onLogin(res.user);
+    } catch (err) {
+      setError(err.message || 'Login failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="loginShell">
+      <form className="loginCard glassCard" onSubmit={submit}>
+        <div className="brandGlyph"><Lock size={25} /></div>
+        <span className="eyebrow">Protected Studio URL</span>
+        <h1>Knobs & Slides Studio</h1>
+        <p>Sign in to access the simulator, mappings, maintenance, and Railway demo URL.</p>
+        <label>Username<input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus /></label>
+        <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="admin123$" /></label>
+        {error && <div className="errorBox">{error}</div>}
+        <button className="loginButton" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
+        <small className="muted">Default admin: <b>admin</b> / <b>admin123$</b></small>
+      </form>
     </div>
   );
 }
@@ -902,6 +976,73 @@ function Events({ events }) {
         ))}
         {!events.length && <p className="muted">No events yet.</p>}
       </div>
+    </section>
+  );
+}
+
+function UserManagement({ currentUser }) {
+  const [users, setUsers] = useState([]);
+  const [selected, setSelected] = useState(null);
+  const [form, setForm] = useState({ username: '', password: '', full_name: '', role: 'user', status: 'active' });
+  const [error, setError] = useState('');
+
+  async function load() {
+    try { setUsers(await api('/api/users')); setError(''); } catch (e) { setError(e.message); }
+  }
+  useEffect(() => { load(); }, []);
+
+  function openUser(u) {
+    setSelected(u);
+    setForm({ username: u.username, password: '', full_name: u.full_name || '', role: u.role, status: u.status });
+  }
+  function newUser() {
+    setSelected(null);
+    setForm({ username: '', password: '', full_name: '', role: 'user', status: 'active' });
+  }
+  async function save(e) {
+    e.preventDefault();
+    const payload = { full_name: form.full_name, role: form.role, status: form.status };
+    if (form.password) payload.password = form.password;
+    if (!selected) {
+      payload.username = form.username;
+      payload.password = form.password;
+      await api('/api/users', { method: 'POST', body: JSON.stringify(payload) });
+    } else {
+      await api(`/api/users/${selected.id}`, { method: 'PUT', body: JSON.stringify(payload) });
+    }
+    newUser();
+    load();
+  }
+  async function removeUser(u) {
+    if (!confirm(`Delete user ${u.username}?`)) return;
+    await api(`/api/users/${u.id}`, { method: 'DELETE' });
+    load();
+  }
+
+  return (
+    <section className="settingsGrid">
+      <div className="glassCard">
+        <div className="sectionHeader"><div><span className="eyebrow">URL Protection</span><h3>User Management</h3></div><button className="refreshButton" onClick={newUser}><UserPlus size={16} />New</button></div>
+        {error && <div className="errorBox">{error}</div>}
+        <div className="userList">
+          {users.map((u) => (
+            <div className="deviceRow clickableRow" key={u.id} onClick={() => openUser(u)}>
+              <Users size={18} />
+              <div><strong>{u.username}</strong><span>{u.full_name || '—'} · {u.role} · {u.status}</span></div>
+              <button className="iconButton" onClick={(e) => { e.stopPropagation(); removeUser(u); }} title="Delete user" disabled={u.id === currentUser.id}><Trash2 size={16} /></button>
+            </div>
+          ))}
+        </div>
+      </div>
+      <form className="glassCard userForm" onSubmit={save}>
+        <span className="eyebrow">{selected ? 'Edit User' : 'Create User'} <InfoTip text="Users protect the deployed Railway URL and local studio app. Admin users can manage other users." /></span>
+        <label>Username<input disabled={!!selected} value={form.username} onChange={(e) => setForm({ ...form, username: e.target.value })} required /></label>
+        <label>Full name<input value={form.full_name} onChange={(e) => setForm({ ...form, full_name: e.target.value })} /></label>
+        <label>Role<select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}><option value="admin">Admin</option><option value="user">User</option></select></label>
+        <label>Status<select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}><option value="active">Active</option><option value="inactive">Inactive</option></select></label>
+        <label>{selected ? 'New password' : 'Password'}<input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} required={!selected} placeholder={selected ? 'Leave blank to keep existing' : 'Required'} /></label>
+        <button className="loginButton">{selected ? 'Save changes' : 'Create user'}</button>
+      </form>
     </section>
   );
 }

@@ -1,7 +1,10 @@
 import json
+import hashlib
+import secrets
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,7 +12,7 @@ from pydantic import BaseModel, Field
 from database import get_conn, init_db, now_iso
 from mapping_engine import map_value
 
-APP_VERSION = "1.2.11"
+APP_VERSION = "1.2.12"
 APP_NAME = "Knobs and Slides Studio"
 
 app = FastAPI(title=APP_NAME, version=APP_VERSION)
@@ -61,6 +64,87 @@ class MappingUpdate(BaseModel):
     output_max: Optional[float] = None
     mapping_type: Optional[str] = None
     is_active: Optional[int] = None
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+class UserCreate(BaseModel):
+    username: str
+    password: str
+    full_name: str = ''
+    role: str = 'user'
+    status: str = 'active'
+
+class UserUpdate(BaseModel):
+    full_name: Optional[str] = None
+    role: Optional[str] = None
+    status: Optional[str] = None
+    password: Optional[str] = None
+
+
+PUBLIC_API_PATHS = {
+    "/api/auth/login",
+    "/api/auth/me",
+    "/api/health",
+    "/api/meta",
+}
+
+def hash_password(password: str) -> str:
+    return hashlib.sha256(password.encode("utf-8")).hexdigest()
+
+def sanitize_user(row):
+    if not row:
+        return None
+    return {
+        "id": row["id"],
+        "username": row["username"],
+        "full_name": row["full_name"],
+        "role": row["role"],
+        "status": row["status"],
+        "last_login_at": row["last_login_at"],
+        "created_at": row["created_at"],
+    }
+
+def user_from_token(token: str):
+    if not token:
+        return None
+    conn = get_conn()
+    row = conn.execute(
+        """
+        SELECT u.* FROM auth_sessions s
+        JOIN users u ON u.id=s.user_id
+        WHERE s.token=? AND s.expires_at>? AND u.status='active'
+        """,
+        (token, now_iso()),
+    ).fetchone()
+    conn.close()
+    return row
+
+def token_from_request(request: Request) -> str:
+    auth = request.headers.get("authorization") or ""
+    if auth.lower().startswith("bearer "):
+        return auth.split(" ", 1)[1].strip()
+    return ""
+
+def require_admin(request: Request):
+    user = user_from_token(token_from_request(request))
+    if not user:
+        raise HTTPException(status_code=401, detail="Login required")
+    if user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+@app.middleware("http")
+async def api_auth_guard(request: Request, call_next):
+    path = request.url.path
+    if request.method == "OPTIONS" or not path.startswith("/api/") or path in PUBLIC_API_PATHS:
+        return await call_next(request)
+    token = token_from_request(request)
+    if not user_from_token(token):
+        from fastapi.responses import JSONResponse
+        return JSONResponse({"detail": "Login required"}, status_code=401)
+    return await call_next(request)
 
 @app.on_event("startup")
 def startup():
@@ -114,6 +198,112 @@ def railway_health():
 @app.get("/api/meta")
 def meta():
     return {"name": APP_NAME, "version": APP_VERSION, "release": "Railway Ready Demo Build"}
+
+@app.post("/api/auth/login")
+def login(payload: LoginRequest):
+    conn = get_conn()
+    user = conn.execute("SELECT * FROM users WHERE username=?", (payload.username.strip(),)).fetchone()
+    if not user or user["password_hash"] != hash_password(payload.password) or user["status"] != "active":
+        conn.close()
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+    token = secrets.token_urlsafe(32)
+    created = now_iso()
+    expires = (datetime.utcnow() + timedelta(days=7)).isoformat(timespec="seconds") + "Z"
+    conn.execute("INSERT INTO auth_sessions(token, user_id, created_at, expires_at) VALUES(?,?,?,?)", (token, user["id"], created, expires))
+    conn.execute("UPDATE users SET last_login_at=? WHERE id=?", (created, user["id"]))
+    conn.commit()
+    fresh = conn.execute("SELECT * FROM users WHERE id=?", (user["id"],)).fetchone()
+    conn.close()
+    return {"token": token, "user": sanitize_user(fresh)}
+
+@app.get("/api/auth/me")
+def me(request: Request):
+    user = user_from_token(token_from_request(request))
+    if not user:
+        raise HTTPException(status_code=401, detail="Login required")
+    return {"user": sanitize_user(user)}
+
+@app.post("/api/auth/logout")
+def logout(request: Request):
+    token = token_from_request(request)
+    conn = get_conn()
+    conn.execute("DELETE FROM auth_sessions WHERE token=?", (token,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+@app.get("/api/users")
+def list_users(request: Request):
+    require_admin(request)
+    return rows("SELECT id, username, full_name, role, status, last_login_at, created_at FROM users ORDER BY id")
+
+@app.post("/api/users")
+def create_user(payload: UserCreate, request: Request):
+    require_admin(request)
+    if len(payload.password) < 6:
+        raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+    role = payload.role if payload.role in {"admin", "user"} else "user"
+    status = payload.status if payload.status in {"active", "inactive"} else "active"
+    conn = get_conn()
+    try:
+        conn.execute(
+            "INSERT INTO users(username, password_hash, full_name, role, status, created_at) VALUES(?,?,?,?,?,?)",
+            (payload.username.strip(), hash_password(payload.password), payload.full_name.strip(), role, status, now_iso()),
+        )
+        conn.commit()
+    except Exception as exc:
+        conn.close()
+        raise HTTPException(status_code=400, detail=str(exc))
+    conn.close()
+    return {"ok": True}
+
+@app.put("/api/users/{user_id}")
+def update_user(user_id: int, payload: UserUpdate, request: Request):
+    require_admin(request)
+    fields = []
+    params = []
+    if payload.full_name is not None:
+        fields.append("full_name=?")
+        params.append(payload.full_name.strip())
+    if payload.role is not None:
+        if payload.role not in {"admin", "user"}:
+            raise HTTPException(status_code=400, detail="role must be admin or user")
+        fields.append("role=?")
+        params.append(payload.role)
+    if payload.status is not None:
+        if payload.status not in {"active", "inactive"}:
+            raise HTTPException(status_code=400, detail="status must be active or inactive")
+        fields.append("status=?")
+        params.append(payload.status)
+    if payload.password:
+        if len(payload.password) < 6:
+            raise HTTPException(status_code=400, detail="Password must be at least 6 characters")
+        fields.append("password_hash=?")
+        params.append(hash_password(payload.password))
+    if not fields:
+        return {"ok": True}
+    params.append(user_id)
+    conn = get_conn()
+    cur = conn.execute(f"UPDATE users SET {', '.join(fields)} WHERE id=?", params)
+    conn.commit()
+    conn.close()
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"ok": True}
+
+@app.delete("/api/users/{user_id}")
+def delete_user(user_id: int, request: Request):
+    admin = require_admin(request)
+    if user_id == admin["id"]:
+        raise HTTPException(status_code=400, detail="You cannot delete the currently logged-in admin user")
+    conn = get_conn()
+    conn.execute("DELETE FROM auth_sessions WHERE user_id=?", (user_id,))
+    cur = conn.execute("DELETE FROM users WHERE id=?", (user_id,))
+    conn.commit()
+    conn.close()
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {"ok": True}
 
 @app.get("/api/devices")
 def get_devices():

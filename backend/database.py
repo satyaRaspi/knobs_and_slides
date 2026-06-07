@@ -1,5 +1,6 @@
 import os
 import sqlite3
+import hashlib
 from pathlib import Path
 from datetime import datetime
 
@@ -68,6 +69,25 @@ def init_db():
             FOREIGN KEY(control_id) REFERENCES controls(id)
         );
 
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT UNIQUE NOT NULL,
+            password_hash TEXT NOT NULL,
+            full_name TEXT NOT NULL DEFAULT '',
+            role TEXT NOT NULL DEFAULT 'user',
+            status TEXT NOT NULL DEFAULT 'active',
+            last_login_at TEXT,
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS auth_sessions (
+            token TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            expires_at TEXT NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id)
+        );
+
         CREATE TABLE IF NOT EXISTS input_events (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             device_id TEXT NOT NULL,
@@ -81,12 +101,20 @@ def init_db():
         );
         """
     )
+    created = now_iso()
     # Safe migration path for users upgrading from 1.1.2 or older SQLite files.
     existing_cols = [r[1] for r in cur.execute("PRAGMA table_info(devices)").fetchall()]
     if "paired_status" not in existing_cols:
         cur.execute("ALTER TABLE devices ADD COLUMN paired_status TEXT NOT NULL DEFAULT 'paired'")
     if "last_seen_at" not in existing_cols:
         cur.execute("ALTER TABLE devices ADD COLUMN last_seen_at TEXT")
+    # Prebuilt admin user for URL protection and user management.
+    admin_hash = hashlib.sha256("admin123$".encode("utf-8")).hexdigest()
+    cur.execute(
+        "INSERT OR IGNORE INTO users(username, password_hash, full_name, role, status, created_at) VALUES(?,?,?,?,?,?)",
+        ("admin", admin_hash, "System Administrator", "admin", "active", created),
+    )
+
     conn.commit()
     seed_db(conn)
     conn.close()
@@ -248,5 +276,12 @@ def seed_db(conn):
                 "INSERT INTO mappings(device_id, application_id, control_id, input_min, input_max, output_min, output_max, mapping_type, is_active) VALUES(?,?,?,?,?,?,?,?,?)",
                 (device_id, c["application_id"], c["id"], 0, 360, c["output_min"], c["output_max"], mapping_type, 1),
             )
+
+    # Prebuilt admin user for URL protection and user management.
+    admin_hash = hashlib.sha256("admin123$".encode("utf-8")).hexdigest()
+    cur.execute(
+        "INSERT OR IGNORE INTO users(username, password_hash, full_name, role, status, created_at) VALUES(?,?,?,?,?,?)",
+        ("admin", admin_hash, "System Administrator", "admin", "active", created),
+    )
 
     conn.commit()
