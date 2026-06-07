@@ -1,8 +1,8 @@
-# Knobs and Slides Studio 1.2.2 — Railway Docker Demo Build
+# Knobs and Slides Studio 1.2.3 — Railway Docker Frontend Build Fixed
 
 This build fixes the Railway deployment issues seen in the earlier Nixpacks builds.
 
-## What changed in 1.2.2
+## What changed in 1.2.3
 
 - Uses a `Dockerfile` for Railway deployment.
 - Avoids the Railway/Nixpacks `pip: command not found` issue.
@@ -20,7 +20,7 @@ This build fixes the Railway deployment issues seen in the earlier Nixpacks buil
 
 ```bash
 git add .
-git commit -m "Release Knobs and Slides Studio 1.2.2 Railway Docker Demo Build"
+git commit -m "Release Knobs and Slides Studio 1.2.3 Railway Docker Frontend Build Fixed"
 git push
 ```
 
@@ -100,5 +100,20 @@ The API health endpoint is:
 ## Version
 
 ```text
-Knobs and Slides Studio 1.2.2 — Railway Docker Demo Build
+Knobs and Slides Studio 1.2.3 — Railway Docker Frontend Build Fixed
 ```
+
+
+## Railway Build Fix in 1.2.3
+
+This version fixes the Railway Docker error where `/frontend/dist` was not found. The React frontend is now built inside Docker using a Node build stage, then copied into the final Python/FastAPI image. This means `frontend/dist` does not need to be committed to GitHub.
+
+Railway deployment steps remain the same:
+
+```bash
+git add .
+git commit -m "Fix Railway Docker frontend build for 1.2.3"
+git push
+```
+
+Railway will rebuild using the included `Dockerfile`.

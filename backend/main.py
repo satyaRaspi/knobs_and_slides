@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from database import get_conn, init_db, now_iso
 from mapping_engine import map_value
 
-APP_VERSION = "1.2.2"
+APP_VERSION = "1.2.3"
 APP_NAME = "Knobs and Slides Studio"
 
 app = FastAPI(title=APP_NAME, version=APP_VERSION)
