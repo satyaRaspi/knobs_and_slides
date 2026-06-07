@@ -35,7 +35,7 @@ import {
 import { api, wsUrl, setToken } from './api';
 import './styles.css';
 
-const VERSION = '1.2.12';
+const VERSION = '1.2.13';
 
 const tabs = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -223,10 +223,9 @@ function LoginScreen({ onLogin }) {
         <h1>Knobs & Slides Studio</h1>
         <p>Sign in to access the simulator, mappings, maintenance, and Railway demo URL.</p>
         <label>Username<input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus /></label>
-        <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="admin123$" /></label>
+        <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter password" /></label>
         {error && <div className="errorBox">{error}</div>}
         <button className="loginButton" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
-        <small className="muted">Default admin: <b>admin</b> / <b>admin123$</b></small>
       </form>
     </div>
   );
