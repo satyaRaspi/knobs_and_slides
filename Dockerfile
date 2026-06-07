@@ -1,15 +1,12 @@
-# Knobs and Slides Studio 1.2.10
-# Railway Docker build with robust Python startup.
+# Knobs and Slides Studio 1.2.11
+# Railway Docker build with safer runtime startup.
 
 FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
-# Copy only package.json first. Do NOT rely on package-lock.json here because
-# generated lock files can contain environment-specific registry URLs.
 COPY frontend/package.json ./package.json
 
-# Install frontend dependencies from public npm registry.
 RUN npm config set registry https://registry.npmjs.org/ && \
     npm install --include=dev --no-audit --no-fund --legacy-peer-deps --registry=https://registry.npmjs.org/ && \
     test -d node_modules/react && \
@@ -34,12 +31,11 @@ RUN python -m pip install --upgrade pip && \
 COPY backend ./backend
 COPY server.py ./server.py
 COPY start.py ./start.py
+COPY start_railway.sh ./start_railway.sh
 COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data && chmod +x /app/start_railway.sh
 
 EXPOSE 8000
 
-# Use a Python startup script instead of shell $PORT expansion.
-# This avoids Railway startCommand/env expansion problems.
-CMD ["python", "start.py"]
+CMD ["/app/start_railway.sh"]
