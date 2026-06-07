@@ -1,8 +1,8 @@
-# Knobs and Slides Studio 1.2.3 — Railway Docker Frontend Build Fixed
+# Knobs and Slides Studio 1.2.4 — Railway Docker Frontend Build Fixed
 
 This build fixes the Railway deployment issues seen in the earlier Nixpacks builds.
 
-## What changed in 1.2.3
+## What changed in 1.2.4
 
 - Uses a `Dockerfile` for Railway deployment.
 - Avoids the Railway/Nixpacks `pip: command not found` issue.
@@ -20,7 +20,7 @@ This build fixes the Railway deployment issues seen in the earlier Nixpacks buil
 
 ```bash
 git add .
-git commit -m "Release Knobs and Slides Studio 1.2.3 Railway Docker Frontend Build Fixed"
+git commit -m "Release Knobs and Slides Studio 1.2.4 Railway Docker Frontend Build Fixed"
 git push
 ```
 
@@ -100,11 +100,11 @@ The API health endpoint is:
 ## Version
 
 ```text
-Knobs and Slides Studio 1.2.3 — Railway Docker Frontend Build Fixed
+Knobs and Slides Studio 1.2.4 — Railway Docker Frontend Build Fixed
 ```
 
 
-## Railway Build Fix in 1.2.3
+## Railway Build Fix in 1.2.4
 
 This version fixes the Railway Docker error where `/frontend/dist` was not found. The React frontend is now built inside Docker using a Node build stage, then copied into the final Python/FastAPI image. This means `frontend/dist` does not need to be committed to GitHub.
 
@@ -112,8 +112,19 @@ Railway deployment steps remain the same:
 
 ```bash
 git add .
-git commit -m "Fix Railway Docker frontend build for 1.2.3"
+git commit -m "Fix Railway Docker frontend build for 1.2.4"
 git push
 ```
 
 Railway will rebuild using the included `Dockerfile`.
+
+## Railway 1.2.4 fix
+
+This version uses Docker and builds the React frontend inside the Docker image. The Dockerfile explicitly installs frontend build dependencies using:
+
+```bash
+npm ci --include=dev || npm install --include=dev
+npm exec vite -- build
+```
+
+This fixes Railway build errors where `vite` was not found during `npm run build`.

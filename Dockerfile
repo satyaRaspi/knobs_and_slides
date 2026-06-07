@@ -1,15 +1,21 @@
-# Knobs and Slides Studio 1.2.3
-# Railway Docker build that builds the React frontend inside Docker.
+# Knobs and Slides Studio 1.2.4
+# Railway Docker build with explicit frontend dependency install.
 
 FROM node:20-alpine AS frontend-builder
 
 WORKDIR /app/frontend
 
-COPY frontend/package*.json ./
-RUN npm install
+# Copy only frontend package metadata first for better Docker caching.
+COPY frontend/package.json frontend/package-lock.json* ./
+
+# Railway may set production install flags in the build environment.
+# Force dev/build dependencies to be installed so vite is available.
+RUN npm ci --include=dev || npm install --include=dev
 
 COPY frontend/ ./
-RUN npm run build
+
+# Use npm exec so the local vite binary is resolved from node_modules.
+RUN npm exec vite -- build
 
 FROM python:3.11-slim
 
