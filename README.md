@@ -1,4 +1,4 @@
-# Knobs and Slides Studio 1.2.0 — Railway Ready Demo Build
+# Knobs and Slides Studio 1.2.1 — Railway Nixpacks Fixed Demo Build
 
 This is the Railway-ready demo build of **Knobs and Slides Studio**.
 
@@ -25,7 +25,7 @@ It keeps the same product features from the 1.1.x line and adds a deployable pro
 ## Version
 
 ```text
-Knobs and Slides Studio 1.2.0 — Railway Ready Demo Build
+Knobs and Slides Studio 1.2.1 — Railway Nixpacks Fixed Demo Build
 ```
 
 ---
@@ -139,6 +139,24 @@ http://localhost:8000/api/health
 
 ---
 
+
+## 1.2.1 Railway Build Fix
+
+This build fixes the Railway/Nixpacks error:
+
+```text
+error: undefined variable 'npm-9_x'
+```
+
+The fix is in `nixpacks.toml`: `npm-9_x` has been removed. `nodejs_20` already provides npm, so Railway can install frontend dependencies using `npm ci`.
+
+```toml
+[phases.setup]
+nixPkgs = ["python311", "nodejs_20"]
+```
+
+A `.nvmrc` file is also included to clearly indicate Node 20.
+
 ## Railway Deployment — GitHub Flow
 
 ### Step 1 — Create a GitHub repository
@@ -156,7 +174,7 @@ From inside the extracted folder:
 ```bash
 git init
 git add .
-git commit -m "Release Knobs and Slides Studio 1.2.0 Railway Ready Demo Build"
+git commit -m "Release Knobs and Slides Studio 1.2.1 Railway Nixpacks Fixed Demo Build"
 git branch -M main
 git remote add origin https://github.com/YOUR_USERNAME/knobs-and-slides-studio.git
 git push -u origin main
