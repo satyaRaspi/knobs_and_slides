@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from database import get_conn, init_db, now_iso
 from mapping_engine import map_value
 
-APP_VERSION = "1.2.9"
+APP_VERSION = "1.2.10"
 APP_NAME = "Knobs and Slides Studio"
 
 app = FastAPI(title=APP_NAME, version=APP_VERSION)
@@ -102,6 +102,14 @@ def root():
 @app.get("/api/health")
 def health():
     return {"status": "OK", "name": APP_NAME, "version": APP_VERSION}
+
+@app.get("/health")
+def plain_health():
+    return {"status": "OK"}
+
+@app.get("/railway-health")
+def railway_health():
+    return {"status": "OK"}
 
 @app.get("/api/meta")
 def meta():
