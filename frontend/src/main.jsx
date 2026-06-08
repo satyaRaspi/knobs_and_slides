@@ -6,7 +6,9 @@ import {
   Bluetooth,
   CheckCircle2,
   ChevronRight,
+  Download,
   Edit3,
+  Eye,
   Cpu,
   Gauge,
   Info,
@@ -17,6 +19,7 @@ import {
   Monitor,
   Moon,
   PauseCircle,
+  Printer,
   Plus,
   Power,
   Link2,
@@ -30,12 +33,46 @@ import {
   Trash2,
   UserPlus,
   Users,
+  MousePointerClick,
+  ShieldCheck,
   Zap,
+  X,
 } from 'lucide-react';
 import { api, wsUrl, setToken } from './api';
 import './styles.css';
 
-const VERSION = '1.2.15';
+const VERSION = '1.2.36';
+
+
+class StudioErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, message: '' };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, message: error?.message || 'A screen error occurred.' };
+  }
+  componentDidCatch(error, info) {
+    console.error('Studio screen error:', error, info);
+  }
+  componentDidUpdate(prevProps) {
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false, message: '' });
+    }
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <section className="glassCard">
+          <SectionHeader eyebrow="Screen recovery" title="This page could not render" text="The app is still running. Use Refresh or another menu item, and check the message below." />
+          <div className="errorBox">{this.state.message}</div>
+          <button className="refreshButton" onClick={() => window.location.reload()}><RefreshCw size={16} />Reload app</button>
+        </section>
+      );
+    }
+    return this.props.children;
+  }
+}
 
 const tabs = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -44,6 +81,7 @@ const tabs = [
   { key: 'profiles', label: 'Profiles', icon: AppWindow },
   { key: 'mappings', label: 'Mappings', icon: SlidersHorizontal },
   { key: 'users', label: 'Users', icon: Users },
+  { key: 'leads', label: 'Leads', icon: UserPlus },
   { key: 'events', label: 'Monitor', icon: Activity },
   { key: 'settings', label: 'Settings', icon: Settings },
 ];
@@ -51,6 +89,7 @@ const tabs = [
 function App() {
   const [active, setActive] = useState('overview');
   const [meta, setMeta] = useState({ name: 'Knobs and Slides Studio', version: VERSION });
+  const [textConfig, setTextConfig] = useState({});
   const [devices, setDevices] = useState([]);
   const [applications, setApplications] = useState([]);
   const [controls, setControls] = useState([]);
@@ -62,24 +101,27 @@ function App() {
   const [authUser, setAuthUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [menuCollapsed, setMenuCollapsed] = useState(() => localStorage.getItem('knobs_menu_collapsed') === '1');
+  const [leadAccess, setLeadAccess] = useState(() => localStorage.getItem('knobs_lead_access') === '1');
 
   async function refresh() {
     try {
       setError('');
-      const [m, d, a, c, map, ev] = await Promise.all([
+      const [m, d, a, c, map, ev, tx] = await Promise.all([
         api('/api/meta'),
         api('/api/devices'),
         api('/api/applications'),
         api('/api/controls'),
         api('/api/mappings'),
         api('/api/events?limit=80'),
+        api('/api/text-config'),
       ]);
-      setMeta({ ...m, version: VERSION, release: 'Collapsible Menu UI' });
+      setMeta({ ...m, version: VERSION, release: 'Configurable Text & Lead Intelligence' });
       setDevices(d);
       setApplications(a);
       setControls(c);
       setMappings(map);
       setEvents(ev);
+      setTextConfig(toTextMap(tx));
       if (ev[0]) setLastEvent(normalizeDbEvent(ev[0]));
     } catch (e) {
       setError(e.message);
@@ -91,6 +133,10 @@ function App() {
       .then((res) => setAuthUser(res.user))
       .catch(() => { setToken(''); setAuthUser(null); })
       .finally(() => setAuthLoading(false));
+  }, []);
+
+  useEffect(() => {
+    api('/api/text-config').then((tx) => setTextConfig(toTextMap(tx))).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -120,6 +166,14 @@ function App() {
   }, []);
 
   const activeMappings = mappings.filter((m) => Number(m.is_active) === 1);
+  const isAdmin = String(authUser?.role || '').toLowerCase() === 'admin' || String(authUser?.username || '').toLowerCase() === 'admin@admin.com';
+  const visibleTabs = tabs.filter((t) => isAdmin || !['users', 'leads'].includes(t.key));
+
+  useEffect(() => {
+    if (!isAdmin && ['users', 'leads'].includes(active)) {
+      setActive('overview');
+    }
+  }, [isAdmin, active]);
 
   async function logout() {
     try { await api('/api/auth/logout', { method: 'POST' }); } catch {}
@@ -131,8 +185,12 @@ function App() {
     return <div className="loginShell"><div className="loginCard glassCard"><div className="brandGlyph"><Lock size={24} /></div><h1>Loading secure studio…</h1></div></div>;
   }
 
+  if (!authUser && !leadAccess) {
+    return <LandingPage textConfig={textConfig} onLogin={setAuthUser} onAccess={() => { localStorage.setItem('knobs_lead_access', '1'); setLeadAccess(true); }} />;
+  }
+
   if (!authUser) {
-    return <LoginScreen onLogin={setAuthUser} />;
+    return <LoginScreen textConfig={textConfig} onLogin={setAuthUser} onBack={() => { localStorage.removeItem('knobs_lead_access'); setLeadAccess(false); }} />;
   }
 
   return (
@@ -155,7 +213,7 @@ function App() {
         </div>
 
         <nav className="navList">
-          {tabs.map((t) => {
+          {visibleTabs.map((t) => {
             const Icon = t.icon;
             return (
               <button key={t.key} className={active === t.key ? 'active' : ''} onClick={() => setActive(t.key)} title={t.label} aria-label={t.label}>
@@ -171,13 +229,17 @@ function App() {
           <strong>{activeMappings.length} mappings · {devices.filter(d => d.paired_status === 'paired').length} paired</strong>
           <InfoTip text="Each paired active knob can control a different mapped application parameter." />
         </div>
+        <div className="sidebarFooter">
+          <span>v{VERSION}</span>
+          <span>TrugenGS (C) 2026</span>
+        </div>
       </aside>
 
       <main className="mainStage">
         <header className="topbar">
           <div>
             <span className="eyebrow">Investor Demo</span>
-            <h2>{tabs.find((t) => t.key === active)?.label} <InfoTip text={`${meta.release}. Same FastAPI backend with simulated Bluetooth input.`} /></h2>
+            <h2>{visibleTabs.find((t) => t.key === active)?.label || 'Overview'} <InfoTip text={`${meta.release}. Same FastAPI backend with simulated Bluetooth input.`} /></h2>
           </div>
           <div className="topActions">
             <button className="iconButton" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')} title="Toggle theme">
@@ -191,21 +253,226 @@ function App() {
 
         {error && <div className="errorBox">{error}</div>}
 
-        {active === 'overview' && <Overview devices={devices} applications={applications} controls={controls} mappings={activeMappings} lastEvent={lastEvent} />}
-        {active === 'simulator' && <MultiSimulator devices={devices} mappings={activeMappings} onEvent={setLastEvent} refresh={refresh} />}
-        {active === 'devices' && <KnobMaintenance devices={devices} mappings={mappings} refresh={refresh} />}
-        {active === 'profiles' && <Profiles applications={applications} controls={controls} mappings={mappings} />}
-        {active === 'mappings' && <Mappings devices={devices} apps={applications} controls={controls} mappings={mappings} refresh={refresh} />}
-        {active === 'users' && <UserManagement currentUser={authUser} />}
-        {active === 'events' && <Events events={events} />}
-        {active === 'settings' && <SettingsPanel meta={meta} devices={devices} mappings={activeMappings} />}
+        <StudioErrorBoundary resetKey={active}>
+          {active === 'overview' && <Overview devices={devices} applications={applications} controls={controls} mappings={activeMappings} lastEvent={lastEvent} />}
+          {active === 'simulator' && <MultiSimulator devices={devices} mappings={activeMappings} onEvent={setLastEvent} refresh={refresh} />}
+          {active === 'devices' && <KnobMaintenance devices={devices} mappings={mappings} refresh={refresh} />}
+          {active === 'profiles' && <Profiles applications={applications} controls={controls} mappings={mappings} />}
+          {active === 'mappings' && <Mappings devices={devices} apps={applications} controls={controls} mappings={mappings} refresh={refresh} />}
+          {active === 'users' && <UserManagement currentUser={isAdmin ? { ...authUser, role: 'admin' } : authUser} />}
+          {active === 'leads' && <LeadManagement currentUser={isAdmin ? { ...authUser, role: 'admin' } : authUser} />}
+          {active === 'events' && <Events events={events} />}
+          {active === 'settings' && <SettingsPanel meta={meta} devices={devices} mappings={activeMappings} textConfig={textConfig} setTextConfig={setTextConfig} />}
+        </StudioErrorBoundary>
       </main>
     </div>
   );
 }
 
-function LoginScreen({ onLogin }) {
-  const [username, setUsername] = useState('admin');
+
+function toTextMap(rows) {
+  const out = {};
+  (Array.isArray(rows) ? rows : []).forEach((r) => { out[r.text_key] = r.text_value; });
+  return out;
+}
+
+function textValue(map, key, fallback) {
+  return map?.[key] ?? fallback;
+}
+
+function collectLeadMetadata() {
+  const ua = navigator.userAgent || '';
+  const now = new Date();
+  const os = /Windows/i.test(ua) ? 'Windows' : /Mac OS|Macintosh/i.test(ua) ? 'macOS' : /Android/i.test(ua) ? 'Android' : /iPhone|iPad|iPod/i.test(ua) ? 'iOS/iPadOS' : /Linux/i.test(ua) ? 'Linux' : 'Unknown';
+  const browser = /Edg/i.test(ua) ? 'Microsoft Edge' : /Chrome/i.test(ua) ? 'Chrome' : /Safari/i.test(ua) ? 'Safari' : /Firefox/i.test(ua) ? 'Firefox' : 'Unknown';
+  const device_type = /Mobi|Android|iPhone|iPad/i.test(ua) ? 'Mobile/Tablet' : 'Desktop/Laptop';
+  return {
+    client_date: now.toLocaleDateString(),
+    client_time: now.toLocaleTimeString(),
+    client_timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || '',
+    client_locale: navigator.language || '',
+    os,
+    device_type,
+    browser,
+    platform: navigator.platform || '',
+    screen_size: `${window.screen?.width || ''}x${window.screen?.height || ''}`,
+    region: (navigator.language || '').split('-')[1] || '',
+    referrer: document.referrer || '',
+    user_agent: ua,
+  };
+}
+
+function LandingPage({ onAccess, onLogin, textConfig = {} }) {
+  const [mode, setMode] = useState('register');
+  const [form, setForm] = useState({ full_name: '', email: '', password: '', phone: '', company: '', role_use_case: '' });
+  const [loginForm, setLoginForm] = useState({ email: '', password: '' });
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [showAccessDialog, setShowAccessDialog] = useState(false);
+
+  function validateDemoPassword(pwd) {
+    return /^[A-Za-z0-9]{6}$/.test((pwd || '').trim());
+  }
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    const normalizedEmail = form.email.trim().toLowerCase();
+    const pwd = form.password.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(normalizedEmail)) {
+      setError('Please enter a valid email ID. This becomes your login user ID.');
+      setBusy(false);
+      return;
+    }
+    if (!validateDemoPassword(pwd)) {
+      setError('Password must be exactly 6 letters/numbers. Example: aB123x');
+      setBusy(false);
+      return;
+    }
+    try {
+      const res = await api('/api/leads', {
+        method: 'POST',
+        body: JSON.stringify({ ...form, email: normalizedEmail, password: pwd, ...collectLeadMetadata() }),
+      });
+      setToken(res.token);
+      if (onLogin) onLogin(res.user);
+      else onAccess();
+    } catch (err) {
+      setError(err.message || 'Could not create demo login. Please check backend/Railway API.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitReturningLogin(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    const normalizedEmail = loginForm.email.trim().toLowerCase();
+    const pwd = loginForm.password.trim();
+    if (!normalizedEmail || !pwd) {
+      setError('Enter your email ID and password.');
+      setBusy(false);
+      return;
+    }
+    try {
+      const res = await api('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ username: normalizedEmail, password: pwd }),
+      });
+      setToken(res.token);
+      if (onLogin) onLogin(res.user);
+      else onAccess();
+    } catch (err) {
+      setError(err.message || 'Login failed. Please check your email ID and password.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const set = (key) => (e) => setForm({ ...form, [key]: e.target.value });
+  const setLogin = (key) => (e) => setLoginForm({ ...loginForm, [key]: e.target.value });
+
+  function openDialog(nextMode = 'register') {
+    setMode(nextMode);
+    setError('');
+    setShowAccessDialog(true);
+  }
+
+  return (
+    <div className="landingShell">
+      <header className="landingNav">
+        <div className="landingBrand"><RadioTower size={24} /><span>{textValue(textConfig, 'landing.brand', 'Knobs & Slides')}</span></div>
+        <div className="landingLinks"><a href="#product">Product</a><a href="#workflow">Workflow</a><button className="navDemoButton" onClick={() => openDialog('register')}>{textValue(textConfig, 'landing.access_demo', 'Access Demo')}</button></div>
+      </header>
+
+      <section className="heroPremium">
+        <div className="heroCopy">
+          <span className="eyebrow premiumEyebrow">{textValue(textConfig, 'landing.eyebrow', 'Wireless Creative Control Surface')}</span>
+          <h1>{textValue(textConfig, 'landing.tagline', 'Pair, Map, Create')}</h1>
+          <p className="heroLead">{textValue(textConfig, 'landing.hero_lead', 'A premium Bluetooth knob and slider software studio for mapping real physical controls to Photoshop, Premiere Pro, Logic Pro, and custom creative workflows.')}</p>
+          <div className="prototypeNotice"><Cpu size={16}/><span>{textValue(textConfig, 'landing.hardware_notice', 'Hardware is currently in progress. This demo shows the software control experience using simulated Bluetooth signals.')}</span></div>
+          <div className="heroActions"><button className="primaryCta" onClick={() => openDialog('register')}>{textValue(textConfig, 'landing.access_demo', 'Access Demo')}</button><button className="secondaryCta secondaryButtonReset" onClick={() => openDialog('login')}>{textValue(textConfig, 'landing.returning_login', 'Already have access?')}</button><a className="secondaryCta" href="#workflow">{textValue(textConfig, 'landing.see_workflow', 'See how it works')}</a></div>
+          <div className="trustStrip"><span><Bluetooth size={15}/> Simulated Bluetooth now</span><span><Cpu size={15}/> Hardware in progress</span><span><SlidersHorizontal size={15}/> Multi-knob mapping</span><span><ShieldCheck size={15}/> Protected demo URL</span></div>
+        </div>
+        <div className="premiumDeviceMock">
+          <div className="deviceGlow"></div>
+          <div className="baseStationCard"><RadioTower size={22}/><span>Base Station</span><strong>6 paired knobs</strong></div>
+          <div className="landingKnob"><div className="ring"></div><div className="cap"><span>124.455°</span><small>Brightness 34.571%</small></div></div>
+          <div className="miniDashboard"><span>Battery 92%</span><span>RGB On</span><span>Touch: Pair</span></div>
+        </div>
+      </section>
+
+      <section id="product" className="premiumGrid">
+        <div className="premiumCard"><Cpu size={22}/><h3>{textValue(textConfig, 'landing.product.card1.title', 'Hardware-aware studio')}</h3><p>{textValue(textConfig, 'landing.product.card1.body', 'The physical knob hardware is currently in progress. This software demo simulates angle, precision, battery, touch events, RGB ring state, and pairing status.')}</p></div>
+        <div className="premiumCard"><MousePointerClick size={22}/><h3>{textValue(textConfig, 'landing.product.card2.title', 'Map any control')}</h3><p>{textValue(textConfig, 'landing.product.card2.body', 'Turn 0–360° input into sliders, knobs, percentages, dB, pixels, color temperature, and timeline values.')}</p></div>
+        <div className="premiumCard"><Sparkles size={22}/><h3>{textValue(textConfig, 'landing.product.card3.title', 'Built for demos')}</h3><p>{textValue(textConfig, 'landing.product.card3.body', 'Ultra-clean landing page, lead capture, protected simulator, and Railway-ready deployment structure.')}</p></div>
+      </section>
+
+      <section id="workflow" className="workflowPremium">
+        <h2>{textValue(textConfig, 'landing.workflow.title', 'From physical movement to creative command.')}</h2>
+        <div className="workflowSteps"><div><b>01</b><h3>Pair</h3><p>{textValue(textConfig, 'landing.workflow.pair', 'Connect multiple knobs to one base station.')}</p></div><div><b>02</b><h3>Map</h3><p>{textValue(textConfig, 'landing.workflow.map', 'Assign each knob to a software control.')}</p></div><div><b>03</b><h3>Create</h3><p>{textValue(textConfig, 'landing.workflow.create', 'Adjust creative values with tactile precision.')}</p></div></div>
+      </section>
+
+      <section id="access" className="accessPanel accessPromptPanel">
+        <div><span className="eyebrow">Demo Access</span><h2>Experience the simulator.</h2><p>New visitors can create demo access. Returning visitors can log in using the same email ID and 6-character password they used earlier.</p></div>
+        <div className="accessPromptCard">
+          <Sparkles size={24} />
+          <h3>Ready to enter the studio?</h3>
+          <p>Open the secure demo dialog to register or log back in.</p>
+          <button className="primaryCta" onClick={() => openDialog('register')}>{textValue(textConfig, 'landing.access_demo', 'Access Demo')}</button>
+          <button className="ghostButton" onClick={() => openDialog('login')}>{textValue(textConfig, 'dialog.existing_access', 'Already have access? Login')}</button>
+        </div>
+      </section>
+
+      <footer className="landingFooter">
+        <div>Knobs and Slides Studio <strong>v{VERSION}</strong></div>
+        <div>{textValue(textConfig, 'footer.copyright', 'TrugenGS (C) 2026')} · {textValue(textConfig, 'footer.hardware', 'Hardware in progress')}</div>
+      </footer>
+
+      {showAccessDialog && (
+        <div className="modalOverlay premiumLeadOverlay" role="dialog" aria-modal="true" aria-label="Access demo form">
+          <div className="leadDialog">
+            <button className="modalClose" onClick={() => setShowAccessDialog(false)} aria-label="Close"><X size={18} /></button>
+            <span className="eyebrow">Access Demo</span>
+            <h2>{mode === 'register' ? textValue(textConfig, 'dialog.register_title', 'Create demo access.') : textValue(textConfig, 'dialog.login_title', 'Welcome back.')}</h2>
+            <p>{mode === 'register' ? textValue(textConfig, 'dialog.register_help', 'Your email becomes your user ID. Choose a simple 6-character password using letters and numbers.') : textValue(textConfig, 'dialog.login_help', 'Log in using the email ID and 6-character password you used when you first accessed the demo.')} Note: the physical hardware is currently in progress; this simulator uses software-generated Bluetooth values.</p>
+
+            <div className="dialogTabs">
+              <button type="button" className={mode === 'register' ? 'active' : ''} onClick={() => { setMode('register'); setError(''); }}>{textValue(textConfig, 'dialog.new_access', 'New Demo Access')}</button>
+              <button type="button" className={mode === 'login' ? 'active' : ''} onClick={() => { setMode('login'); setError(''); }}>{textValue(textConfig, 'dialog.existing_access', 'Already have access? Login')}</button>
+            </div>
+
+            {mode === 'register' ? (
+              <form className="leadForm dialogLeadForm" onSubmit={submit}>
+                <input required placeholder="Name" value={form.full_name} onChange={set('full_name')} />
+                <input required type="email" placeholder="Email / User ID" value={form.email} onChange={set('email')} />
+                <input required type="password" minLength="6" maxLength="6" pattern="[A-Za-z0-9]{6}" placeholder="6-char password: letters + numbers" value={form.password} onChange={set('password')} />
+                <input placeholder="Phone" value={form.phone} onChange={set('phone')} />
+                <input placeholder="Company" value={form.company} onChange={set('company')} />
+                <textarea placeholder="Role / use case" value={form.role_use_case} onChange={set('role_use_case')} />
+                {error && <div className="errorBox">{error}</div>}
+                <button className="primaryCta" type="submit" disabled={busy}>{busy ? 'Creating login…' : textValue(textConfig, 'dialog.submit_register', 'Access Simulator')}</button>
+              </form>
+            ) : (
+              <form className="leadForm dialogLeadForm" onSubmit={submitReturningLogin}>
+                <input required type="email" placeholder="Email / User ID" value={loginForm.email} onChange={setLogin('email')} />
+                <input required type="password" minLength="6" maxLength="6" placeholder="6-char password" value={loginForm.password} onChange={setLogin('password')} />
+                {error && <div className="errorBox">{error}</div>}
+                <button className="primaryCta" type="submit" disabled={busy}>{busy ? 'Signing in…' : textValue(textConfig, 'dialog.submit_login', 'Login & Open Simulator')}</button>
+                <button type="button" className="ghostButton" onClick={() => { setMode('register'); setError(''); }}>Need access? Create demo login</button>
+              </form>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function LoginScreen({ onLogin, onBack, textConfig = {} }) {
+  const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -233,9 +500,10 @@ function LoginScreen({ onLogin }) {
       <form className="loginCard glassCard" onSubmit={submit}>
         <div className="brandGlyph"><Lock size={25} /></div>
         <span className="eyebrow">Protected Studio URL</span>
-        <h1>Knobs & Slides Studio</h1>
-        <p>Sign in to access the simulator, mappings, maintenance, and Railway demo URL.</p>
-        <label>Username<input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus /></label>
+        <h1>{textValue(textConfig, 'login.title', 'Knobs & Slides Studio')}</h1>
+        <p>{textValue(textConfig, 'login.subtitle', 'Sign in to access the simulator, mappings, maintenance, and Railway demo URL.')}</p>
+        {onBack && <button type="button" className="ghostButton" onClick={onBack}>Back to landing page</button>}
+        <label>Email / Username<input value={username} onChange={(e) => setUsername(e.target.value)} autoFocus placeholder="Email or admin email" /></label>
         <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter password" /></label>
         {error && <div className="errorBox">{error}</div>}
         <button className="loginButton" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>
@@ -338,6 +606,17 @@ function InfoTip({ text }) {
       <button type="button" className="infoTipButton" title={text} onFocus={() => setOpen(true)} onBlur={() => setOpen(false)} aria-label="More information"><Info size={13} /></button>
       {open && <span className="infoTipBubble">{text}</span>}
     </span>
+  );
+}
+
+
+function SectionHeader({ eyebrow, title, text }) {
+  return (
+    <div className="sectionHeader">
+      {eyebrow && <span className="eyebrow">{eyebrow}</span>}
+      {title && <h3>{title}</h3>}
+      {text && <p className="muted">{text}</p>}
+    </div>
   );
 }
 
@@ -458,6 +737,7 @@ function MultiSimulator({ devices, mappings, onEvent, refresh }) {
         <div>
           <span className="eyebrow">Studio Console <InfoTip text="Only active paired knobs are shown. Move a knob to see the mapped application result as a live visual meter." /></span>
           <h3>Live paired knobs</h3>
+          <div className="hardwareProgressBadge"><Cpu size={15}/> Hardware status: In progress</div>
         </div>
         <div className="pairedCountBadge"><Bluetooth size={16} />{visibleDevices.length} paired live</div>
       </div>
@@ -1039,6 +1319,218 @@ function Events({ events }) {
   );
 }
 
+
+function LeadManagement({ currentUser }) {
+  const [leads, setLeads] = useState([]);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [selectedLead, setSelectedLead] = useState(null);
+  const [editLead, setEditLead] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
+
+  const isAdminUser = currentUser && String(currentUser.role || '').toLowerCase() === 'admin';
+
+  async function loadLeads() {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await api('/api/leads');
+      const clean = Array.isArray(data) ? data.filter(Boolean) : [];
+      setLeads(clean);
+      setSelectedIds((ids) => ids.filter((id) => clean.some((lead) => lead.id === id)));
+    } catch (e) {
+      setError(e?.message || 'Unable to load leads. Please refresh after confirming admin login.');
+      setLeads([]);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    if (isAdminUser) loadLeads();
+    else setLoading(false);
+  }, [isAdminUser]);
+
+  if (!isAdminUser) {
+    return (
+      <section className="glassCard">
+        <SectionHeader eyebrow="Protected" title="Admin access required" text="Lead records are visible only to admin users." />
+      </section>
+    );
+  }
+
+  function safeText(value) {
+    if (value === null || value === undefined || value === '') return '—';
+    return String(value);
+  }
+
+  function safeDate(value) {
+    if (!value) return '—';
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
+  }
+
+  function leadId(lead) { return Number(lead?.id); }
+  const allSelected = leads.length > 0 && selectedIds.length === leads.length;
+
+  function toggleSelect(id, checked) {
+    setSelectedIds((prev) => checked ? Array.from(new Set([...prev, id])) : prev.filter((x) => x !== id));
+  }
+
+  function toggleSelectAll(checked) {
+    setSelectedIds(checked ? leads.map((lead) => leadId(lead)).filter(Boolean) : []);
+  }
+
+  function csvEscape(value) {
+    const text = safeText(value).replace(/—/g, '');
+    return `"${text.replace(/"/g, '""')}"`;
+  }
+
+  const csvCols = [
+    ['full_name', 'Name'], ['email', 'Email'], ['phone', 'Phone'], ['company', 'Company'],
+    ['role_use_case', 'Use Case'], ['created_at', 'Captured UTC'], ['client_date', 'Client Date'],
+    ['client_time', 'Client Time'], ['client_timezone', 'Timezone'], ['os', 'OS'],
+    ['device_type', 'Device'], ['browser', 'Browser'], ['region', 'Region'], ['ip_address', 'IP']
+  ];
+
+  function exportCsv(rowsToExport = leads, filenameSuffix = 'all') {
+    const header = csvCols.map(([, label]) => csvEscape(label)).join(',');
+    const body = rowsToExport.map((lead) => csvCols.map(([key]) => csvEscape(lead?.[key])).join(',')).join('\n');
+    const blob = new Blob([`${header}\n${body}`], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `knobs-slides-leads-${filenameSuffix}-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  function exportSelected() {
+    const rowsToExport = leads.filter((lead) => selectedIds.includes(leadId(lead)));
+    exportCsv(rowsToExport, 'selected');
+  }
+
+  async function deleteLead(id) {
+    if (!confirm('Delete this lead record?')) return;
+    await api(`/api/leads/${id}`, { method: 'DELETE' });
+    await loadLeads();
+  }
+
+  async function deleteSelected() {
+    if (!selectedIds.length) return;
+    if (!confirm(`Delete ${selectedIds.length} selected lead record(s)?`)) return;
+    await api('/api/leads/delete-bulk', { method: 'POST', body: JSON.stringify({ ids: selectedIds }) });
+    setSelectedIds([]);
+    await loadLeads();
+  }
+
+  function printLead(lead = null) {
+    const rows = lead ? [lead] : leads;
+    const html = `
+      <html><head><title>Knobs & Slides Leads</title>
+      <style>body{font-family:Arial,sans-serif;padding:24px;color:#111}table{border-collapse:collapse;width:100%;font-size:12px}th,td{border:1px solid #ddd;padding:8px;text-align:left;vertical-align:top}th{background:#f5f5f7}h1{font-size:22px}.meta{color:#666;margin-bottom:16px}</style></head>
+      <body><h1>Knobs & Slides Studio Leads</h1><div class="meta">Printed ${new Date().toLocaleString()}</div>
+      <table><thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Company</th><th>Use Case</th><th>Date</th><th>OS</th><th>Device</th><th>Region</th></tr></thead>
+      <tbody>${rows.map(l => `<tr><td>${safeText(l.full_name)}</td><td>${safeText(l.email)}</td><td>${safeText(l.phone)}</td><td>${safeText(l.company)}</td><td>${safeText(l.role_use_case)}</td><td>${safeDate(l.created_at)}</td><td>${safeText(l.os)}</td><td>${safeText(l.device_type)}</td><td>${safeText(l.region)}</td></tr>`).join('')}</tbody></table></body></html>`;
+    const win = window.open('', '_blank', 'width=1100,height=800');
+    win.document.write(html);
+    win.document.close();
+    win.focus();
+    win.print();
+  }
+
+  const detailRows = selectedLead ? [
+    ['Name', selectedLead.full_name], ['Email', selectedLead.email], ['Phone', selectedLead.phone],
+    ['Company', selectedLead.company], ['Role / use case', selectedLead.role_use_case], ['Source', selectedLead.source],
+    ['Captured UTC', selectedLead.created_at], ['Client date', selectedLead.client_date], ['Client time', selectedLead.client_time],
+    ['Timezone', selectedLead.client_timezone], ['Locale', selectedLead.client_locale], ['OS', selectedLead.os],
+    ['Device type', selectedLead.device_type], ['Browser', selectedLead.browser], ['Platform', selectedLead.platform],
+    ['Screen size', selectedLead.screen_size], ['Region', selectedLead.region], ['Referrer', selectedLead.referrer],
+    ['IP address', selectedLead.ip_address], ['User agent', selectedLead.user_agent],
+  ] : [];
+
+  return (
+    <section className="leadsPage">
+      <SectionHeader eyebrow="Marketing" title="Lead Capture" text="Clean admin table for simulator access leads. Select records, export, edit, delete, or click a row for full detail." />
+      <div className="leadToolbar premiumLeadToolbar">
+        <label className="selectAllControl">
+          <input type="checkbox" checked={allSelected} onChange={(e) => toggleSelectAll(e.target.checked)} />
+          <span>Select all</span>
+        </label>
+        <div className="leadSummary"><UserPlus size={16} /><strong>{leads.length}</strong><span>leads</span>{selectedIds.length > 0 && <em>{selectedIds.length} selected</em>}</div>
+        <div className="buttonRow compactButtons">
+          <button className="refreshButton" type="button" onClick={loadLeads}><RefreshCw size={16} />Refresh</button>
+          <button className="refreshButton" type="button" onClick={() => exportCsv(leads, 'all')} disabled={!leads.length}><Download size={16} />Export all</button>
+          <button className="refreshButton" type="button" onClick={exportSelected} disabled={!selectedIds.length}><Download size={16} />Export selected</button>
+          <button className="refreshButton dangerSoft" type="button" onClick={deleteSelected} disabled={!selectedIds.length}><Trash2 size={16} />Delete selected</button>
+        </div>
+      </div>
+      {error && <div className="errorBox">{error}</div>}
+      <div className="leadTableShell">
+        <div className="leadTableHeader">
+          <span></span><span>Name</span><span>Email</span><span>Company</span><span>Use case</span><span>Captured</span><span>Actions</span>
+        </div>
+        {loading && <div className="emptyState">Loading leads…</div>}
+        {!loading && !error && leads.length === 0 && <div className="emptyState">No leads captured yet.</div>}
+        {!loading && leads.map((lead, index) => {
+          const id = leadId(lead);
+          const checked = selectedIds.includes(id);
+          return (
+            <div className={`leadRecordRow ${checked ? 'selected' : ''}`} key={id || `${lead?.email || 'lead'}-${index}`} onClick={() => setSelectedLead(lead)}>
+              <span className="leadSelectCell" onClick={(e) => e.stopPropagation()}><input type="checkbox" checked={checked} onChange={(e) => toggleSelect(id, e.target.checked)} /></span>
+              <span><strong>{safeText(lead?.full_name)}</strong><small>{safeText(lead?.phone)}</small></span>
+              <span title={safeText(lead?.email)}>{safeText(lead?.email)}</span>
+              <span title={safeText(lead?.company)}>{safeText(lead?.company)}</span>
+              <span title={safeText(lead?.role_use_case)}>{safeText(lead?.role_use_case)}</span>
+              <span>{safeDate(lead?.created_at)}<small>{safeText(lead?.region)} · {safeText(lead?.device_type)}</small></span>
+              <span className="rowIconActions" onClick={(e) => e.stopPropagation()}>
+                <button className="miniIconButton" onClick={() => setEditLead({ ...lead })} title="Edit lead"><Edit3 size={16} /></button>
+                <button className="miniIconButton dangerIcon" onClick={() => deleteLead(id)} title="Delete lead"><Trash2 size={16} /></button>
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      {selectedLead && (
+        <div className="maintenanceEditorOverlay" onClick={() => setSelectedLead(null)}>
+          <div className="glassCard leadDetailSheet" onClick={(e) => e.stopPropagation()}>
+            <div className="editorSheetHeader">
+              <div><span className="eyebrow"><Eye size={14} /> Lead detail</span><h3>{safeText(selectedLead.full_name)}</h3></div>
+              <div className="editorIconActions"><button className="miniIconButton" onClick={() => setEditLead({ ...selectedLead })} title="Edit lead"><Edit3 size={16} /></button><button className="miniIconButton" onClick={() => printLead(selectedLead)} title="Print lead"><Printer size={16} /></button><button className="miniIconButton" onClick={() => setSelectedLead(null)}>×</button></div>
+            </div>
+            <div className="leadDetailGrid">
+              {detailRows.map(([label, value]) => <div key={label}><span>{label}</span><strong>{safeText(value)}</strong></div>)}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {editLead && (
+        <div className="maintenanceEditorOverlay" onClick={() => setEditLead(null)}>
+          <form className="glassCard leadEditSheet" onClick={(e) => e.stopPropagation()} onSubmit={async (e) => {
+            e.preventDefault();
+            await api(`/api/leads/${editLead.id}`, { method: 'PUT', body: JSON.stringify(editLead) });
+            setEditLead(null);
+            await loadLeads();
+          }}>
+            <div className="editorSheetHeader">
+              <div><span className="eyebrow"><Edit3 size={14} /> Edit lead</span><h3>{safeText(editLead.full_name)}</h3></div>
+              <button type="button" className="miniIconButton" onClick={() => setEditLead(null)}>×</button>
+            </div>
+            <div className="leadEditGrid">
+              {[['full_name','Name'],['email','Email'],['phone','Phone'],['company','Company'],['role_use_case','Use case'],['region','Region'],['os','OS'],['device_type','Device'],['browser','Browser'],['client_timezone','Timezone']].map(([key,label]) => (
+                <label key={key}>{label}<input value={editLead[key] || ''} onChange={(e) => setEditLead({ ...editLead, [key]: e.target.value })} /></label>
+              ))}
+            </div>
+            <div className="buttonRow"><button type="button" className="secondaryBtn" onClick={() => setEditLead(null)}>Cancel</button><button className="primaryBtn" type="submit">Save changes</button></div>
+          </form>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function UserManagement({ currentUser }) {
   const [users, setUsers] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -1106,26 +1598,94 @@ function UserManagement({ currentUser }) {
   );
 }
 
-function SettingsPanel({ meta, devices, mappings }) {
+function SettingsPanel({ meta, devices, mappings, textConfig, setTextConfig }) {
+  const [rows, setRows] = useState([]);
+  const [edited, setEdited] = useState({});
+  const [status, setStatus] = useState('');
+  const [filter, setFilter] = useState('');
+
+  async function loadTextConfig() {
+    try {
+      const data = await api('/api/text-config');
+      setRows(Array.isArray(data) ? data : []);
+      setTextConfig(toTextMap(data));
+      setStatus('Text configuration loaded.');
+    } catch (e) {
+      setStatus(e.message || 'Unable to load text configuration.');
+    }
+  }
+
+  useEffect(() => { loadTextConfig(); }, []);
+
+  const filteredRows = rows.filter((r) => {
+    const q = filter.trim().toLowerCase();
+    if (!q) return true;
+    return [r.category, r.label, r.text_key, edited[r.text_key] ?? r.text_value].some((v) => String(v || '').toLowerCase().includes(q));
+  });
+
+  function updateLocal(row, value) {
+    setEdited((prev) => ({ ...prev, [row.text_key]: value }));
+  }
+
+  async function saveAll() {
+    const items = rows.map((r) => ({ text_key: r.text_key, text_value: edited[r.text_key] ?? r.text_value }));
+    await api('/api/text-config', { method: 'PUT', body: JSON.stringify({ items }) });
+    setStatus('Static text saved successfully. Refresh or revisit screens to see all updates.');
+    await loadTextConfig();
+    setEdited({});
+  }
+
+  function exportTextCsv() {
+    const cols = ['category', 'label', 'text_key', 'text_value'];
+    const csv = [cols.join(',')].concat(rows.map((r) => cols.map((c) => `"${String((edited[r.text_key] ?? r[c]) || '').replace(/"/g, '""')}"`).join(','))).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `knobs-slides-static-text-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
-    <section className="settingsGrid">
+    <section className="settingsGrid wideSettingsGrid">
       <div className="glassCard">
-        <span className="eyebrow">Release <InfoTip text="High-contrast simulated values, visual simulator output, touch pairing controls, knob maintenance, clickable mappings, and tooltips." /></span>
+        <span className="eyebrow">Release <InfoTip text="Railway-ready build with configurable static text, enriched leads, and exportable lead management." /></span>
         <h3>{meta.name}</h3>
         <div className="settingRows">
-          <div><strong>Backend</strong><span>Same FastAPI + SQLite engine from 1.0.0</span></div>
-          <div><strong>Bluetooth</strong><span>Simulation now, BLE adapter placeholder retained</span></div>
+          <div><strong>Version</strong><span>{VERSION}</span></div>
+          <div><strong>Backend</strong><span>FastAPI + SQLite with protected admin APIs</span></div>
           <div><strong>Multi-Knob Mode</strong><span>{devices.length} devices registered, {mappings.length} active mappings</span></div>
         </div>
       </div>
       <div className="glassCard">
         <span className="eyebrow">Registered Devices</span>
-        {devices.map((d) => (
+        {devices.slice(0, 8).map((d) => (
           <div className="deviceRow" key={d.device_id}>
             <Bluetooth size={18} />
             <div><strong>{d.device_id}</strong><span>{d.device_name || d.device_type}</span></div>
           </div>
         ))}
+      </div>
+      <div className="glassCard textConfigCard">
+        <div className="sectionHeader">
+          <div><span className="eyebrow"><Edit3 size={14} /> Static Text Configuration</span><h3>Configure every major displayed text</h3><p className="muted">Edit the formatted table below to change landing page, dialog, login, footer, and release copy without touching code.</p></div>
+          <div className="buttonRow compactButtons"><button className="refreshButton" onClick={loadTextConfig}><RefreshCw size={16} />Reload</button><button className="refreshButton" onClick={exportTextCsv}><Download size={16} />Export</button><button className="primaryButton" onClick={saveAll}>Save Text</button></div>
+        </div>
+        <input className="textFilterInput" placeholder="Search static text by category, key, label, or value" value={filter} onChange={(e) => setFilter(e.target.value)} />
+        {status && <p className="successMsg">{status}</p>}
+        <div className="textConfigTable">
+          <div className="textConfigHeader"><span>Category</span><span>Label</span><span>Key</span><span>Displayed Text</span></div>
+          {filteredRows.map((row) => (
+            <div className="textConfigRow" key={row.text_key}>
+              <span>{row.category}</span>
+              <span>{row.label}</span>
+              <code>{row.text_key}</code>
+              <textarea value={edited[row.text_key] ?? row.text_value} onChange={(e) => updateLocal(row, e.target.value)} />
+            </div>
+          ))}
+          {!filteredRows.length && <div className="emptyState">No matching static text records.</div>}
+        </div>
       </div>
     </section>
   );

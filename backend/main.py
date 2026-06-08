@@ -1,9 +1,10 @@
 import json
+import re
 import hashlib
 import secrets
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict, Any
 from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -12,7 +13,7 @@ from pydantic import BaseModel, Field
 from database import get_conn, init_db, now_iso
 from mapping_engine import map_value
 
-APP_VERSION = "1.2.15"
+APP_VERSION = "1.2.36"
 APP_NAME = "Knobs and Slides Studio"
 
 app = FastAPI(title=APP_NAME, version=APP_VERSION)
@@ -82,12 +83,61 @@ class UserUpdate(BaseModel):
     status: Optional[str] = None
     password: Optional[str] = None
 
+class LeadCreate(BaseModel):
+    full_name: str
+    email: str
+    password: str
+    phone: str = ''
+    company: str = ''
+    role_use_case: str = ''
+    client_date: str = ''
+    client_time: str = ''
+    client_timezone: str = ''
+    client_locale: str = ''
+    os: str = ''
+    device_type: str = ''
+    browser: str = ''
+    platform: str = ''
+    screen_size: str = ''
+    region: str = ''
+    referrer: str = ''
+    user_agent: str = ''
+
+
+class LeadUpdate(BaseModel):
+    full_name: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    company: Optional[str] = None
+    role_use_case: Optional[str] = None
+    source: Optional[str] = None
+    region: Optional[str] = None
+    os: Optional[str] = None
+    device_type: Optional[str] = None
+    browser: Optional[str] = None
+    client_timezone: Optional[str] = None
+    client_locale: Optional[str] = None
+    platform: Optional[str] = None
+    screen_size: Optional[str] = None
+    referrer: Optional[str] = None
+
+class TextConfigUpdate(BaseModel):
+    text_value: str
+
+class TextConfigBulkUpdate(BaseModel):
+    items: list[Dict[str, Any]]
+
 
 PUBLIC_API_PATHS = {
     "/api/auth/login",
     "/api/auth/me",
     "/api/health",
     "/api/meta",
+    "/api/text-config",
+}
+
+PUBLIC_API_METHOD_PATHS = {
+    ("POST", "/api/leads"),  # public landing-page lead capture only
 }
 
 def hash_password(password: str) -> str:
@@ -138,7 +188,12 @@ def require_admin(request: Request):
 @app.middleware("http")
 async def api_auth_guard(request: Request, call_next):
     path = request.url.path
-    if request.method == "OPTIONS" or not path.startswith("/api/") or path in PUBLIC_API_PATHS:
+    if (
+        request.method == "OPTIONS"
+        or not path.startswith("/api/")
+        or path in PUBLIC_API_PATHS
+        or (request.method, path) in PUBLIC_API_METHOD_PATHS
+    ):
         return await call_next(request)
     token = token_from_request(request)
     if not user_from_token(token):
@@ -197,7 +252,155 @@ def railway_health():
 
 @app.get("/api/meta")
 def meta():
-    return {"name": APP_NAME, "version": APP_VERSION, "release": "Railway Ready Demo Build"}
+    return {"name": APP_NAME, "version": APP_VERSION, "release": "Clean Leads Table Link Fixed"}
+
+
+@app.post("/api/leads")
+def create_lead(payload: LeadCreate, request: Request):
+    full_name = payload.full_name.strip()
+    email = payload.email.strip().lower()
+    password = payload.password.strip()
+    if not full_name or not email or "@" not in email:
+        raise HTTPException(status_code=400, detail="Please enter a valid name and email")
+    if not re.fullmatch(r"[A-Za-z0-9]{6}", password):
+        raise HTTPException(status_code=400, detail="Password must be exactly 6 letters/numbers")
+
+    conn = get_conn()
+    created = now_iso()
+    client_host = request.client.host if request.client else ''
+    user_agent = payload.user_agent.strip() or request.headers.get("user-agent", "")
+    cur = conn.execute(
+        """
+        INSERT INTO leads(
+            full_name, email, phone, company, role_use_case, source, created_at,
+            client_date, client_time, client_timezone, client_locale, os, device_type,
+            browser, platform, screen_size, region, referrer, user_agent, ip_address
+        )
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """,
+        (
+            full_name, email, payload.phone.strip(), payload.company.strip(), payload.role_use_case.strip(),
+            "landing_page", created, payload.client_date.strip(), payload.client_time.strip(),
+            payload.client_timezone.strip(), payload.client_locale.strip(), payload.os.strip(),
+            payload.device_type.strip(), payload.browser.strip(), payload.platform.strip(), payload.screen_size.strip(),
+            payload.region.strip(), payload.referrer.strip(), user_agent, client_host
+        ),
+    )
+    lead_id = cur.lastrowid
+
+    existing = conn.execute("SELECT * FROM users WHERE username=?", (email,)).fetchone()
+    if existing:
+        conn.execute(
+            "UPDATE users SET password_hash=?, full_name=?, role='user', status='active' WHERE username=?",
+            (hash_password(password), full_name, email),
+        )
+        user_id = existing["id"]
+    else:
+        user_cur = conn.execute(
+            "INSERT INTO users(username, password_hash, full_name, role, status, created_at) VALUES(?,?,?,?,?,?)",
+            (email, hash_password(password), full_name, "user", "active", created),
+        )
+        user_id = user_cur.lastrowid
+
+    token = secrets.token_urlsafe(32)
+    expires = (datetime.utcnow() + timedelta(days=7)).isoformat(timespec="seconds") + "Z"
+    conn.execute("INSERT INTO auth_sessions(token, user_id, created_at, expires_at) VALUES(?,?,?,?)", (token, user_id, created, expires))
+    conn.execute("UPDATE users SET last_login_at=? WHERE id=?", (created, user_id))
+    conn.commit()
+    user = conn.execute("SELECT * FROM users WHERE id=?", (user_id,)).fetchone()
+    conn.close()
+    return {"status": "OK", "lead_id": lead_id, "token": token, "user": sanitize_user(user), "message": "Demo user created"}
+
+@app.get("/api/leads")
+def get_leads(request: Request, limit: int = 200):
+    require_admin(request)
+    limit = min(max(limit, 1), 1000)
+    return rows("SELECT * FROM leads ORDER BY id DESC LIMIT ?", (limit,))
+
+
+@app.put("/api/leads/{lead_id}")
+def update_lead(lead_id: int, payload: LeadUpdate, request: Request):
+    require_admin(request)
+    allowed = [
+        "full_name", "email", "phone", "company", "role_use_case", "source", "region",
+        "os", "device_type", "browser", "client_timezone", "client_locale",
+        "platform", "screen_size", "referrer"
+    ]
+    updates = []
+    values = []
+    for field in allowed:
+        value = getattr(payload, field)
+        if value is not None:
+            updates.append(f"{field}=?")
+            values.append(str(value).strip())
+    if not updates:
+        return {"ok": True, "message": "No changes"}
+    values.append(lead_id)
+    conn = get_conn()
+    cur = conn.execute(f"UPDATE leads SET {', '.join(updates)} WHERE id=?", values)
+    conn.commit()
+    if cur.rowcount == 0:
+        conn.close()
+        raise HTTPException(status_code=404, detail="Lead not found")
+    lead = conn.execute("SELECT * FROM leads WHERE id=?", (lead_id,)).fetchone()
+    conn.close()
+    return dict(lead)
+
+@app.delete("/api/leads/{lead_id}")
+def delete_lead(lead_id: int, request: Request):
+    require_admin(request)
+    conn = get_conn()
+    cur = conn.execute("DELETE FROM leads WHERE id=?", (lead_id,))
+    conn.commit()
+    conn.close()
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Lead not found")
+    return {"ok": True}
+
+@app.post("/api/leads/delete-bulk")
+def delete_leads_bulk(payload: Dict[str, Any], request: Request):
+    require_admin(request)
+    ids = payload.get("ids", []) if isinstance(payload, dict) else []
+    clean_ids = [int(x) for x in ids if str(x).isdigit()]
+    if not clean_ids:
+        return {"ok": True, "deleted": 0}
+    placeholders = ",".join(["?"] * len(clean_ids))
+    conn = get_conn()
+    cur = conn.execute(f"DELETE FROM leads WHERE id IN ({placeholders})", clean_ids)
+    conn.commit()
+    deleted = cur.rowcount
+    conn.close()
+    return {"ok": True, "deleted": deleted}
+
+@app.get("/api/text-config")
+def get_text_config():
+    return rows("SELECT id, text_key, category, label, text_value, updated_at FROM text_config ORDER BY category, text_key")
+
+@app.put("/api/text-config/{text_key}")
+def update_text_config(text_key: str, payload: TextConfigUpdate, request: Request):
+    require_admin(request)
+    conn = get_conn()
+    now = now_iso()
+    cur = conn.execute("UPDATE text_config SET text_value=?, updated_at=? WHERE text_key=?", (payload.text_value, now, text_key))
+    conn.commit()
+    conn.close()
+    if cur.rowcount == 0:
+        raise HTTPException(status_code=404, detail="Text key not found")
+    return {"ok": True}
+
+@app.put("/api/text-config")
+def bulk_update_text_config(payload: TextConfigBulkUpdate, request: Request):
+    require_admin(request)
+    conn = get_conn()
+    now = now_iso()
+    for item in payload.items:
+        key = str(item.get("text_key", "")).strip()
+        if not key:
+            continue
+        conn.execute("UPDATE text_config SET text_value=?, updated_at=? WHERE text_key=?", (str(item.get("text_value", "")), now, key))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
 
 @app.post("/api/auth/login")
 def login(payload: LoginRequest):

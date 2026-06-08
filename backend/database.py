@@ -7,6 +7,10 @@ from datetime import datetime
 DB_PATH = Path(os.getenv("KNOBS_DB_PATH", Path(__file__).parent / "knobs_slides.db"))
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
+ADMIN_USERNAME = "admin@admin.com"
+ADMIN_PASSWORD = "adm123"
+LEGACY_ADMIN_USERNAME = "admin"
+
 
 def get_conn():
     conn = sqlite3.connect(DB_PATH)
@@ -16,6 +20,40 @@ def get_conn():
 
 def now_iso():
     return datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+
+def ensure_admin_user(cur, created):
+    """Seed or migrate the default admin account.
+
+    Fresh installs use admin@admin.com / adm123. Existing databases that
+    still have the old admin username are migrated to the email-based admin.
+    If both accounts exist, the old username is deactivated so only the new
+    admin email remains the default admin login.
+    """
+    admin_hash = hashlib.sha256(ADMIN_PASSWORD.encode("utf-8")).hexdigest()
+    current = cur.execute("SELECT id FROM users WHERE username=?", (ADMIN_USERNAME,)).fetchone()
+    legacy = cur.execute("SELECT id FROM users WHERE username=?", (LEGACY_ADMIN_USERNAME,)).fetchone()
+
+    if current:
+        cur.execute(
+            "UPDATE users SET password_hash=?, full_name=?, role='admin', status='active' WHERE username=?",
+            (admin_hash, "System Administrator", ADMIN_USERNAME),
+        )
+        if legacy:
+            cur.execute(
+                "UPDATE users SET role='user', status='inactive' WHERE username=?",
+                (LEGACY_ADMIN_USERNAME,),
+            )
+    elif legacy:
+        cur.execute(
+            "UPDATE users SET username=?, password_hash=?, full_name=?, role='admin', status='active' WHERE username=?",
+            (ADMIN_USERNAME, admin_hash, "System Administrator", LEGACY_ADMIN_USERNAME),
+        )
+    else:
+        cur.execute(
+            "INSERT INTO users(username, password_hash, full_name, role, status, created_at) VALUES(?,?,?,?,?,?)",
+            (ADMIN_USERNAME, admin_hash, "System Administrator", "admin", "active", created),
+        )
 
 
 def init_db():
@@ -99,6 +137,26 @@ def init_db():
             raw_payload TEXT,
             created_at TEXT NOT NULL
         );
+
+        CREATE TABLE IF NOT EXISTS leads (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            full_name TEXT NOT NULL,
+            email TEXT NOT NULL,
+            phone TEXT DEFAULT '',
+            company TEXT DEFAULT '',
+            role_use_case TEXT DEFAULT '',
+            source TEXT DEFAULT 'landing_page',
+            created_at TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS text_config (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            text_key TEXT UNIQUE NOT NULL,
+            category TEXT NOT NULL DEFAULT 'General',
+            label TEXT NOT NULL DEFAULT '',
+            text_value TEXT NOT NULL DEFAULT '',
+            updated_at TEXT
+        );
         """
     )
     created = now_iso()
@@ -108,17 +166,75 @@ def init_db():
         cur.execute("ALTER TABLE devices ADD COLUMN paired_status TEXT NOT NULL DEFAULT 'paired'")
     if "last_seen_at" not in existing_cols:
         cur.execute("ALTER TABLE devices ADD COLUMN last_seen_at TEXT")
-    # Prebuilt admin user for URL protection and user management.
-    admin_hash = hashlib.sha256("admin123$".encode("utf-8")).hexdigest()
-    cur.execute(
-        "INSERT OR IGNORE INTO users(username, password_hash, full_name, role, status, created_at) VALUES(?,?,?,?,?,?)",
-        ("admin", admin_hash, "System Administrator", "admin", "active", created),
-    )
 
+    lead_cols = [r[1] for r in cur.execute("PRAGMA table_info(leads)").fetchall()]
+    extra_lead_cols = {
+        "client_date": "TEXT DEFAULT ''",
+        "client_time": "TEXT DEFAULT ''",
+        "client_timezone": "TEXT DEFAULT ''",
+        "client_locale": "TEXT DEFAULT ''",
+        "os": "TEXT DEFAULT ''",
+        "device_type": "TEXT DEFAULT ''",
+        "browser": "TEXT DEFAULT ''",
+        "platform": "TEXT DEFAULT ''",
+        "screen_size": "TEXT DEFAULT ''",
+        "region": "TEXT DEFAULT ''",
+        "referrer": "TEXT DEFAULT ''",
+        "user_agent": "TEXT DEFAULT ''",
+        "ip_address": "TEXT DEFAULT ''",
+    }
+    for col, ddl in extra_lead_cols.items():
+        if col not in lead_cols:
+            cur.execute(f"ALTER TABLE leads ADD COLUMN {col} {ddl}")
+    # Prebuilt admin user for URL protection and user management.
+    ensure_admin_user(cur, created)
+
+    seed_text_config(conn)
     conn.commit()
     seed_db(conn)
     conn.close()
 
+
+
+def seed_text_config(conn):
+    cur = conn.cursor()
+    updated = now_iso()
+    defaults = [
+        ("landing.brand", "Landing", "Brand name", "Knobs & Slides"),
+        ("landing.tagline", "Landing", "Hero tagline", "Pair, Map, Create"),
+        ("landing.eyebrow", "Landing", "Hero eyebrow", "Wireless Creative Control Surface"),
+        ("landing.hero_lead", "Landing", "Hero description", "A premium Bluetooth knob and slider software studio for mapping real physical controls to Photoshop, Premiere Pro, Logic Pro, and custom creative workflows."),
+        ("landing.hardware_notice", "Landing", "Hardware disclosure", "Hardware is currently in progress. This demo shows the software control experience using simulated Bluetooth signals."),
+        ("landing.access_demo", "Landing", "Access demo button", "Access Demo"),
+        ("landing.returning_login", "Landing", "Returning user button", "Already have access?"),
+        ("landing.see_workflow", "Landing", "Workflow link", "See how it works"),
+        ("landing.product.card1.title", "Landing", "Product card 1 title", "Hardware-aware studio"),
+        ("landing.product.card1.body", "Landing", "Product card 1 body", "The physical knob hardware is currently in progress. This software demo simulates angle, precision, battery, touch events, RGB ring state, and pairing status."),
+        ("landing.product.card2.title", "Landing", "Product card 2 title", "Map any control"),
+        ("landing.product.card2.body", "Landing", "Product card 2 body", "Turn 0–360° input into sliders, knobs, percentages, dB, pixels, color temperature, and timeline values."),
+        ("landing.product.card3.title", "Landing", "Product card 3 title", "Built for demos"),
+        ("landing.product.card3.body", "Landing", "Product card 3 body", "Ultra-clean landing page, lead capture, protected simulator, and Railway-ready deployment structure."),
+        ("landing.workflow.title", "Landing", "Workflow title", "From physical movement to creative command."),
+        ("landing.workflow.pair", "Landing", "Pair step", "Connect multiple knobs to one base station."),
+        ("landing.workflow.map", "Landing", "Map step", "Assign each knob to a software control."),
+        ("landing.workflow.create", "Landing", "Create step", "Adjust creative values with tactile precision."),
+        ("dialog.register_title", "Demo Dialog", "Register title", "Create demo access."),
+        ("dialog.login_title", "Demo Dialog", "Login title", "Welcome back."),
+        ("dialog.register_help", "Demo Dialog", "Register helper text", "Your email becomes your user ID. Choose a simple 6-character password using letters and numbers."),
+        ("dialog.login_help", "Demo Dialog", "Login helper text", "Log in using the email ID and 6-character password you used when you first accessed the demo."),
+        ("dialog.new_access", "Demo Dialog", "New access tab", "New Demo Access"),
+        ("dialog.existing_access", "Demo Dialog", "Existing access tab", "Already have access? Login"),
+        ("dialog.submit_register", "Demo Dialog", "Register submit button", "Access Simulator"),
+        ("dialog.submit_login", "Demo Dialog", "Login submit button", "Login & Open Simulator"),
+        ("login.title", "Login", "Login title", "Knobs & Slides Studio"),
+        ("login.subtitle", "Login", "Login subtitle", "Sign in to access the simulator, mappings, maintenance, and Railway demo URL."),
+        ("footer.copyright", "Footer", "Copyright text", "TrugenGS (C) 2026"),
+        ("footer.hardware", "Footer", "Hardware stage text", "Hardware in progress"),
+    ]
+    cur.executemany(
+        "INSERT OR IGNORE INTO text_config(text_key, category, label, text_value, updated_at) VALUES(?,?,?,?,?)",
+        [(k, c, l, v, updated) for k, c, l, v in defaults],
+    )
 
 def seed_db(conn):
     cur = conn.cursor()
@@ -278,10 +394,6 @@ def seed_db(conn):
             )
 
     # Prebuilt admin user for URL protection and user management.
-    admin_hash = hashlib.sha256("admin123$".encode("utf-8")).hexdigest()
-    cur.execute(
-        "INSERT OR IGNORE INTO users(username, password_hash, full_name, role, status, created_at) VALUES(?,?,?,?,?,?)",
-        ("admin", admin_hash, "System Administrator", "admin", "active", created),
-    )
+    ensure_admin_user(cur, created)
 
     conn.commit()

@@ -1,11 +1,34 @@
 @echo off
 setlocal EnableExtensions
-cd /d "%~dp0frontend"
+set "PROJECT_DIR=%~dp0"
+set "FRONTEND_DIR=%PROJECT_DIR%frontend"
 
 echo =======================================================
-echo Knobs and Slides Studio 1.2.12 - Frontend Startup
+echo Knobs and Slides Studio 1.2.29 - Frontend Startup
 echo =======================================================
 echo.
+echo Frontend folder: %FRONTEND_DIR%
+echo.
+
+if not exist "%FRONTEND_DIR%\index.html" (
+    echo ERROR: frontend\index.html was not found.
+    echo Please extract the complete ZIP before running this file.
+    pause
+    exit /b 1
+)
+
+if not exist "%FRONTEND_DIR%\src\main.jsx" (
+    echo WARNING: frontend\src\main.jsx was not found.
+    echo This usually means the ZIP was not fully extracted or the script is being run from the wrong folder.
+    echo.
+    echo Starting the backend-served production app instead.
+    echo Open: http://localhost:8000
+    echo.
+    call "%PROJECT_DIR%start_app_windows.bat"
+    exit /b 0
+)
+
+cd /d "%FRONTEND_DIR%"
 
 where node >nul 2>nul
 if errorlevel 1 (
@@ -32,22 +55,9 @@ echo.
 echo Setting npm registry...
 call npm config set registry https://registry.npmjs.org/
 
-REM Vite must be installed locally in frontend\node_modules.
-REM If node_modules exists but Vite is missing, reinstall dependencies.
-if not exist node_modules (
-    goto INSTALL_DEPS
-)
-
-if not exist node_modules\.bin\vite.cmd (
-    echo node_modules exists but Vite is missing. Reinstalling frontend dependencies...
-    goto CLEAN_INSTALL
-)
-
-if not exist node_modules\react (
-    echo node_modules exists but React is missing. Reinstalling frontend dependencies...
-    goto CLEAN_INSTALL
-)
-
+if not exist node_modules goto INSTALL_DEPS
+if not exist node_modules\.bin\vite.cmd goto CLEAN_INSTALL
+if not exist node_modules\react goto CLEAN_INSTALL
 goto START_DEV
 
 :INSTALL_DEPS
@@ -67,28 +77,32 @@ call npm install --no-audit --no-fund --legacy-peer-deps
 if errorlevel 1 (
     echo.
     echo ERROR: Frontend dependency installation failed.
-    echo Please copy the error above and share it.
+    echo You can still use the backend-served app by running start_app_windows.bat.
     pause
     exit /b 1
 )
 if not exist node_modules\.bin\vite.cmd (
     echo.
     echo ERROR: Vite was still not installed locally.
-    echo Try running fix_frontend_install_windows.bat and share the output if it fails.
+    echo You can still use the backend-served app by running start_app_windows.bat.
     pause
     exit /b 1
 )
 
 :START_DEV
 echo.
+echo Confirming source file exists:
+dir src\main.jsx
+
+echo.
 echo Starting frontend at http://localhost:5173 ...
 echo Keep this window open while using the app.
 echo.
-call node .\node_modules\vite\bin\vite.js --host 0.0.0.0 --port 5173
+call npm run dev
 if errorlevel 1 (
     echo.
-    echo Frontend did not start. Trying npm run dev as fallback...
-    call npm run dev
+    echo Frontend dev server did not start.
+    echo Use start_app_windows.bat and open http://localhost:8000 as the stable local option.
 )
 
 pause
