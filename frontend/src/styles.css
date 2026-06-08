@@ -1277,3 +1277,163 @@ body.dark .meterThumb { background: #f5f5f7; }
 .clickableRow { cursor: pointer; }
 .clickableRow:hover { transform: translateY(-1px); box-shadow: var(--shadow); }
 .userForm { display: grid; gap: 14px; }
+
+/* 1.2.14 Hardware Status Dashboard above simulator knobs */
+.hardwareStatusGrid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 14px;
+}
+.hardwareStatusTile {
+  min-height: 74px;
+  padding: 10px;
+  border-radius: 18px;
+  background: rgba(255,255,255,.62);
+  border: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 4px;
+  overflow: hidden;
+}
+:root[data-theme='dark'] .hardwareStatusTile {
+  background: rgba(44,44,46,.58);
+}
+.hardwareTileIcon {
+  width: 26px;
+  height: 26px;
+  border-radius: 10px;
+  display: inline-grid;
+  place-items: center;
+  color: #fff;
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  box-shadow: 0 8px 18px rgba(0,122,255,.18);
+}
+.hardwareStatusTile:not(.active) .hardwareTileIcon {
+  background: linear-gradient(135deg, #8e8e93, #c7c7cc);
+}
+.hardwareTileLabel {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  white-space: nowrap;
+}
+.hardwareStatusTile strong {
+  display: block;
+  color: #fff;
+  background: rgba(0,0,0,.86);
+  border: 1px solid rgba(255,255,255,.14);
+  border-radius: 12px;
+  padding: 7px 8px;
+  font-size: 13px;
+  font-weight: 950;
+  line-height: 1.1;
+  letter-spacing: -.03em;
+  min-height: 30px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+:root[data-theme='dark'] .hardwareStatusTile strong {
+  color: #000;
+  background: rgba(255,255,255,.94);
+  border-color: rgba(0,0,0,.08);
+}
+.simulatorTouchControls.three {
+  grid-template-columns: repeat(3, 1fr);
+  width: min(270px, 100%);
+}
+.rgbTouch {
+  color: #ffffff;
+  background: linear-gradient(135deg, #af52de, #ff2d55, #ffcc00);
+}
+@media (max-width: 1120px) {
+  .hardwareStatusGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 520px) {
+  .hardwareStatusGrid { grid-template-columns: 1fr; }
+  .simulatorTouchControls.three { grid-template-columns: 1fr; }
+}
+
+/* 1.2.15 Collapsible Menu UI */
+.brandBlock { position: relative; }
+.brandText { min-width: 0; transition: opacity .18s ease, width .18s ease; }
+.menuToggle {
+  margin-left: auto;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  border-radius: 13px;
+  display: grid;
+  place-items: center;
+  color: var(--text);
+  background: var(--panelStrong);
+  box-shadow: var(--softShadow);
+  transition: transform .18s ease, background .18s ease;
+}
+.menuToggle:hover { background: rgba(0,122,255,0.10); }
+.studioShell.menuCollapsed .sidebar {
+  width: 92px;
+  padding: 22px 14px;
+}
+.studioShell.menuCollapsed .brandBlock {
+  justify-content: center;
+  gap: 0;
+  margin-bottom: 24px;
+}
+.studioShell.menuCollapsed .brandGlyph {
+  width: 54px;
+  height: 54px;
+  border-radius: 19px;
+}
+.studioShell.menuCollapsed .brandText,
+.studioShell.menuCollapsed .navList button span,
+.studioShell.menuCollapsed .sidebarCard {
+  display: none;
+}
+.studioShell.menuCollapsed .menuToggle {
+  position: absolute;
+  right: -4px;
+  bottom: -14px;
+  width: 30px;
+  height: 30px;
+  border-radius: 11px;
+}
+.studioShell.menuCollapsed .menuToggle svg { transform: rotate(180deg); }
+.studioShell.menuCollapsed .navList {
+  gap: 10px;
+  justify-items: center;
+}
+.studioShell.menuCollapsed .navList button {
+  width: 54px;
+  height: 54px;
+  padding: 0;
+  justify-content: center;
+  border-radius: 19px;
+}
+.studioShell.menuCollapsed .navList button:hover { transform: translateY(-1px); }
+.studioShell.menuCollapsed .mainStage { padding-left: 30px; }
+@media (max-width: 900px) {
+  .studioShell { display: block; }
+  .sidebar, .studioShell.menuCollapsed .sidebar {
+    position: relative;
+    width: 100%;
+    min-height: auto;
+    display: block;
+    padding: 14px;
+  }
+  .studioShell.menuCollapsed .brandText,
+  .studioShell.menuCollapsed .navList button span { display: inline; }
+  .studioShell.menuCollapsed .sidebarCard { display: block; }
+  .studioShell.menuCollapsed .navList button { width: auto; height: auto; padding: 12px 13px; }
+  .studioShell.menuCollapsed .navList { justify-items: stretch; }
+  .studioShell.menuCollapsed .menuToggle { position: static; width: 36px; height: 36px; }
+}

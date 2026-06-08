@@ -35,7 +35,7 @@ import {
 import { api, wsUrl, setToken } from './api';
 import './styles.css';
 
-const VERSION = '1.2.13';
+const VERSION = '1.2.15';
 
 const tabs = [
   { key: 'overview', label: 'Overview', icon: LayoutDashboard },
@@ -61,6 +61,7 @@ function App() {
   const [theme, setTheme] = useState(() => localStorage.getItem('knobs_theme') || 'light');
   const [authUser, setAuthUser] = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  const [menuCollapsed, setMenuCollapsed] = useState(() => localStorage.getItem('knobs_menu_collapsed') === '1');
 
   async function refresh() {
     try {
@@ -73,7 +74,7 @@ function App() {
         api('/api/mappings'),
         api('/api/events?limit=80'),
       ]);
-      setMeta({ ...m, version: VERSION, release: 'Minimal UI with Tooltips' });
+      setMeta({ ...m, version: VERSION, release: 'Collapsible Menu UI' });
       setDevices(d);
       setApplications(a);
       setControls(c);
@@ -100,6 +101,10 @@ function App() {
     document.documentElement.dataset.theme = theme;
     localStorage.setItem('knobs_theme', theme);
   }, [theme]);
+
+  useEffect(() => {
+    localStorage.setItem('knobs_menu_collapsed', menuCollapsed ? '1' : '0');
+  }, [menuCollapsed]);
 
   useEffect(() => {
     let socket;
@@ -131,21 +136,29 @@ function App() {
   }
 
   return (
-    <div className="studioShell">
+    <div className={menuCollapsed ? "studioShell menuCollapsed" : "studioShell"}>
       <aside className="sidebar">
         <div className="brandBlock">
           <div className="brandGlyph"><RadioTower size={25} /></div>
-          <div>
+          <div className="brandText">
             <h1>Knobs & Slides</h1>
             <p>Studio {meta.version}</p>
           </div>
+          <button
+            className="menuToggle"
+            onClick={() => setMenuCollapsed(!menuCollapsed)}
+            title={menuCollapsed ? 'Expand menu' : 'Collapse menu'}
+            aria-label={menuCollapsed ? 'Expand menu' : 'Collapse menu'}
+          >
+            <ChevronRight size={18} />
+          </button>
         </div>
 
         <nav className="navList">
           {tabs.map((t) => {
             const Icon = t.icon;
             return (
-              <button key={t.key} className={active === t.key ? 'active' : ''} onClick={() => setActive(t.key)}>
+              <button key={t.key} className={active === t.key ? 'active' : ''} onClick={() => setActive(t.key)} title={t.label} aria-label={t.label}>
                 <Icon size={18} />
                 <span>{t.label}</span>
               </button>
@@ -380,10 +393,18 @@ function MultiSimulator({ devices, mappings, onEvent, refresh }) {
   );
   const [positions, setPositions] = useState({});
   const [results, setResults] = useState({});
+  const [touchEvents, setTouchEvents] = useState({});
+  const [rgbStates, setRgbStates] = useState({});
+  const [batteryLevels, setBatteryLevels] = useState({});
 
   useEffect(() => {
     setPositions((prev) => ({ ...initialPositions, ...prev }));
-  }, [initialPositions]);
+    setRgbStates((prev) => ({ ...Object.fromEntries(visibleDevices.map((d) => [d.device_id, true])), ...prev }));
+    setBatteryLevels((prev) => ({
+      ...Object.fromEntries(visibleDevices.map((d, i) => [d.device_id, Math.max(42, 96 - i * 7)])),
+      ...prev,
+    }));
+  }, [initialPositions, visibleDevices]);
 
   function mappingFor(deviceId) {
     return mappings.find((m) => m.device_id === deviceId);
@@ -405,18 +426,30 @@ function MultiSimulator({ devices, mappings, onEvent, refresh }) {
   function updatePosition(deviceId, value) {
     const nextValue = Number(Number(value).toFixed(3));
     setPositions((prev) => ({ ...prev, [deviceId]: nextValue }));
+    markTouch(deviceId, 'Knob surface');
     window.clearTimeout(updatePosition.timers?.[deviceId]);
     updatePosition.timers = updatePosition.timers || {};
     updatePosition.timers[deviceId] = window.setTimeout(() => transmit(deviceId, nextValue), 120);
   }
 
+  function markTouch(deviceId, label) {
+    const stamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    setTouchEvents((prev) => ({ ...prev, [deviceId]: `${label} · ${stamp}` }));
+  }
+
   async function simulatorDeviceAction(deviceId, endpoint) {
     try {
+      markTouch(deviceId, endpoint === 'unpair' ? 'Unpair touch' : 'Power touch');
       await api(`/api/devices/${encodeURIComponent(deviceId)}/${endpoint}`, { method: 'POST' });
       if (refresh) await refresh();
     } catch (e) {
       setResults((prev) => ({ ...prev, [deviceId]: { display_value: e.message } }));
     }
+  }
+
+  function toggleRgb(deviceId) {
+    setRgbStates((prev) => ({ ...prev, [deviceId]: !prev[deviceId] }));
+    markTouch(deviceId, 'RGB touch');
   }
 
   return (
@@ -448,15 +481,22 @@ function MultiSimulator({ devices, mappings, onEvent, refresh }) {
                   mapping={mapping}
                   position={pos}
                   result={result}
+                  batteryLevel={batteryLevels[device.device_id] ?? 88}
+                  touchEvent={touchEvents[device.device_id] || 'Idle'}
+                  rgbOn={rgbStates[device.device_id] !== false}
+                  baseCount={visibleDevices.length}
                 />
 
                 <div className="studioKnobDock">
-                  <div className="simulatorTouchControls">
+                  <div className="simulatorTouchControls three">
                     <button className="touchButton pairedTouch" onClick={() => simulatorDeviceAction(device.device_id, 'unpair')} title="Unpair this simulated Bluetooth knob">
-                      <Bluetooth size={14} /> Paired
+                      <Bluetooth size={14} /> Pair
+                    </button>
+                    <button className="touchButton rgbTouch" onClick={() => toggleRgb(device.device_id)} title="Toggle RGB ring state">
+                      <Zap size={14} /> RGB
                     </button>
                     <button className="touchButton powerTouch" onClick={() => simulatorDeviceAction(device.device_id, 'deactivate')} title="Switch off this simulated knob">
-                      <Power size={14} /> Switch Off
+                      <Power size={14} /> Off
                     </button>
                   </div>
                   <CircularKnob value={pos} size={220} interactive onChange={(v) => updatePosition(device.device_id, v)} />
@@ -490,7 +530,7 @@ function mappedValue(position, mapping, result) {
   return value;
 }
 
-function VisualResultPanel({ device, mapping, position, result }) {
+function VisualResultPanel({ device, mapping, position, result, batteryLevel = 88, touchEvent = 'Idle', rgbOn = true, baseCount = 1 }) {
   const numericValue = mappedValue(position, mapping, result);
   const outputMin = mapping ? Number(mapping.output_min) : 0;
   const outputMax = mapping ? Number(mapping.output_max) : 100;
@@ -507,6 +547,15 @@ function VisualResultPanel({ device, mapping, position, result }) {
       <div className="channelIdentity">
         <strong>{device.device_id}</strong>
         <span>{device.device_name}</span>
+      </div>
+
+      <div className="hardwareStatusGrid">
+        <HardwareStatusTile icon={Gauge} label="Angle" value={`${Number(position).toFixed(3)}°`} tip="Real-time knob angle from the simulated Bluetooth stream." />
+        <HardwareStatusTile icon={Cpu} label="Precision" value="0.001°" tip="3-decimal precision is maintained from input to mapped output preview." />
+        <HardwareStatusTile icon={Zap} label="Battery" value={`${batteryLevel}%`} tip="Simulated battery status for the hardware knob." />
+        <HardwareStatusTile icon={Power} label="Touch" value={touchEvent} tip="Last capacitive touch or knob-surface event detected in the simulator." />
+        <HardwareStatusTile icon={Sparkles} label="RGB Ring" value={rgbOn ? 'On' : 'Off'} tip="Simulated RGB ring light state for the knob base." active={rgbOn} />
+        <HardwareStatusTile icon={RadioTower} label="Base" value={`${baseCount} linked`} tip="Multiple knobs are paired to one simulated base station." />
       </div>
 
       <div className="visualStage">
@@ -540,6 +589,17 @@ function VisualResultPanel({ device, mapping, position, result }) {
         <small>{mapping ? mapping.mapping_type : 'mapping'} <InfoTip text={mapping ? `0°–360° maps to ${mapping.output_min}–${mapping.output_max}${mapping.output_unit || ''}` : 'Create a mapping for this device.'} /></small>
         <small className="pairPill paired">paired</small>
       </div>
+    </div>
+  );
+}
+
+
+function HardwareStatusTile({ icon: Icon, label, value, tip, active = true }) {
+  return (
+    <div className={active ? 'hardwareStatusTile active' : 'hardwareStatusTile'}>
+      <span className="hardwareTileIcon"><Icon size={14} /></span>
+      <span className="hardwareTileLabel">{label} <InfoTip text={tip} /></span>
+      <strong>{value}</strong>
     </div>
   );
 }
