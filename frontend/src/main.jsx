@@ -41,7 +41,7 @@ import {
 import { api, wsUrl, setToken } from './api';
 import './styles.css';
 
-const VERSION = '1.2.36';
+const VERSION = '1.2.37';
 
 
 class StudioErrorBoundary extends React.Component {
@@ -182,7 +182,7 @@ function App() {
   }
 
   if (authLoading) {
-    return <div className="loginShell"><div className="loginCard glassCard"><div className="brandGlyph"><Lock size={24} /></div><h1>Loading secure studio…</h1></div></div>;
+    return <div className="loginShell"><div className="loginCard glassCard"><div className="brandGlyph logoGlyph"><img src="/ks-logo.png" alt="K&S logo" /></div><h1>Loading secure studio…</h1></div></div>;
   }
 
   if (!authUser && !leadAccess) {
@@ -197,7 +197,7 @@ function App() {
     <div className={menuCollapsed ? "studioShell menuCollapsed" : "studioShell"}>
       <aside className="sidebar">
         <div className="brandBlock">
-          <div className="brandGlyph"><RadioTower size={25} /></div>
+          <div className="brandGlyph logoGlyph"><img src="/ks-logo.png" alt="K&S logo" /></div>
           <div className="brandText">
             <h1>Knobs & Slides</h1>
             <p>Studio {meta.version}</p>
@@ -383,7 +383,7 @@ function LandingPage({ onAccess, onLogin, textConfig = {} }) {
   return (
     <div className="landingShell">
       <header className="landingNav">
-        <div className="landingBrand"><RadioTower size={24} /><span>{textValue(textConfig, 'landing.brand', 'Knobs & Slides')}</span></div>
+        <div className="landingBrand"><img className="landingLogo" src="/ks-logo.png" alt="K&S logo" /><span>{textValue(textConfig, 'landing.brand', 'Knobs & Slides')}</span></div>
         <div className="landingLinks"><a href="#product">Product</a><a href="#workflow">Workflow</a><button className="navDemoButton" onClick={() => openDialog('register')}>{textValue(textConfig, 'landing.access_demo', 'Access Demo')}</button></div>
       </header>
 
@@ -498,7 +498,7 @@ function LoginScreen({ onLogin, onBack, textConfig = {} }) {
   return (
     <div className="loginShell">
       <form className="loginCard glassCard" onSubmit={submit}>
-        <div className="brandGlyph"><Lock size={25} /></div>
+        <div className="brandGlyph logoGlyph loginLogoGlyph"><img src="/ks-logo.png" alt="K&S logo" /></div>
         <span className="eyebrow">Protected Studio URL</span>
         <h1>{textValue(textConfig, 'login.title', 'Knobs & Slides Studio')}</h1>
         <p>{textValue(textConfig, 'login.subtitle', 'Sign in to access the simulator, mappings, maintenance, and Railway demo URL.')}</p>

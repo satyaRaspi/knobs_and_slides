@@ -1,4 +1,4 @@
-# Knobs and Slides Studio 1.2.36 — Clean Leads Table Link Fixed
+# Knobs and Slides Studio 1.2.37 — Clean Leads Table Link Fixed
 
 This build includes a cleaned admin Leads table with selectable rows, row-click detail dialogs, export all/selected, edit and delete actions, plus configurable static text and lead metadata capture.
 
@@ -6,11 +6,11 @@ Admin login:
 - Username: admin@admin.com
 - Password: adm123
 
-# Knobs and Slides Studio 1.2.36 — Configurable Text & Lead Intelligence
+# Knobs and Slides Studio 1.2.37 — Configurable Text & Lead Intelligence
 
 This release makes it clear on the landing page, demo dialog, simulator, and footer that the physical hardware is currently in progress and the current demo uses simulated Bluetooth signals.
 
-# Knobs and Slides Studio 1.2.36 — Landing Dialog Overlay Fixed
+# Knobs and Slides Studio 1.2.37 — Landing Dialog Overlay Fixed
 
 Ultra-premium landing page with tagline **Pair, Map, Create**, lead capture, protected studio login, simulator, user management, and Railway Docker deployment.
 
@@ -24,17 +24,17 @@ Default admin remains seeded in backend: `admin@admin.com / adm123`. The login p
 ## Railway
 Clear any custom Railway Start Command and let the Dockerfile run `/app/start_railway.sh`.
 
-# Knobs and Slides Studio 1.2.36 — Collapsible Menu UI
+# Knobs and Slides Studio 1.2.37 — Collapsible Menu UI
 
 
-## 1.2.36 Collapsible Menu UI
+## 1.2.37 Collapsible Menu UI
 
 - Sidebar/menu can now collapse into an icon-only rail.
 - Added menu toggle button near the Knobs & Slides logo.
 - Main content expands when the menu is collapsed.
 - Navigation icons retain tooltips through button titles.
 
-## 1.2.36 Hardware Status Dashboard
+## 1.2.37 Hardware Status Dashboard
 
 This version adds a compact hardware-style dashboard above each simulator knob showing:
 
@@ -47,7 +47,7 @@ This version adds a compact hardware-style dashboard above each simulator knob s
 
 The dashboard values use high-contrast display styling for readability in both light and dark modes.
 
-## 1.2.36 login security cleanup
+## 1.2.37 login security cleanup
 
 - Removed the visible default admin/password hint from the login page.
 - Kept the seeded admin account active in the backend.
@@ -56,7 +56,7 @@ The dashboard values use high-contrast display styling for readability in both l
 
 This build fixes the Railway deployment issues seen in the earlier Nixpacks builds.
 
-## What changed in 1.2.36
+## What changed in 1.2.37
 
 - Uses a `Dockerfile` for Railway deployment.
 - Avoids the Railway/Nixpacks `pip: command not found` issue.
@@ -74,7 +74,7 @@ This build fixes the Railway deployment issues seen in the earlier Nixpacks buil
 
 ```bash
 git add .
-git commit -m "Release Knobs and Slides Studio 1.2.36 Railway Docker Frontend Build Fixed"
+git commit -m "Release Knobs and Slides Studio 1.2.37 Railway Docker Frontend Build Fixed"
 git push
 ```
 
@@ -154,11 +154,11 @@ The API health endpoint is:
 ## Version
 
 ```text
-Knobs and Slides Studio 1.2.36 — Railway Docker Frontend Build Fixed
+Knobs and Slides Studio 1.2.37 — Railway Docker Frontend Build Fixed
 ```
 
 
-## Railway Build Fix in 1.2.36
+## Railway Build Fix in 1.2.37
 
 This version fixes the Railway Docker error where `/frontend/dist` was not found. The React frontend is now built inside Docker using a Node build stage, then copied into the final Python/FastAPI image. This means `frontend/dist` does not need to be committed to GitHub.
 
@@ -166,13 +166,13 @@ Railway deployment steps remain the same:
 
 ```bash
 git add .
-git commit -m "Fix Railway Docker frontend build for 1.2.36"
+git commit -m "Fix Railway Docker frontend build for 1.2.37"
 git push
 ```
 
 Railway will rebuild using the included `Dockerfile`.
 
-## Railway 1.2.36 fix
+## Railway 1.2.37 fix
 
 This version uses Docker and builds the React frontend inside the Docker image. The Dockerfile explicitly installs frontend build dependencies using:
 
@@ -183,7 +183,7 @@ npm exec vite -- build
 
 This fixes Railway build errors where `vite` was not found during `npm run build`.
 
-## Railway 1.2.36 Fix Notes
+## Railway 1.2.37 Fix Notes
 
 This build hardens the Docker frontend build:
 
@@ -192,7 +192,7 @@ This build hardens the Docker frontend build:
 - React, ReactDOM, and Vite are verified in local `node_modules` before building.
 - Docker uses `./node_modules/.bin/vite build` instead of `npm exec vite -- build`, preventing npm from downloading a temporary Vite version.
 
-## Version 1.2.36 note — frontend npm install fix
+## Version 1.2.37 note — frontend npm install fix
 
 This build removes the generated `frontend/package-lock.json` and `frontend/node_modules` from the ZIP because those can contain machine-specific or registry-specific metadata. The frontend now installs cleanly from the public npm registry.
 
@@ -219,7 +219,7 @@ npm install --no-audit --no-fund --legacy-peer-deps
 npm run dev
 ```
 
-## Windows frontend startup fix in 1.2.36
+## Windows frontend startup fix in 1.2.37
 
 The Windows frontend startup script now uses `call npm ...` for every npm command. This is important on Windows because npm runs through `npm.cmd`; without `call`, a batch file can stop or behave unpredictably after the first npm command.
 
@@ -230,7 +230,7 @@ If the frontend does not start:
 3. Keep the command window open.
 4. Open `http://localhost:5173`.
 
-## 1.2.36 API routing fix
+## 1.2.37 API routing fix
 
 If you see this browser error:
 
@@ -253,7 +253,7 @@ For local use, keep both windows open:
 
 Then open `http://localhost:5173`.
 
-## 1.2.36 Railway health-check fix
+## 1.2.37 Railway health-check fix
 
 This version removes the Railway `startCommand` override and lets Docker run `python start.py`.
 The Python startup script reads Railway's `PORT` variable directly, so the app does not depend on shell expansion of `$PORT`.
@@ -266,7 +266,7 @@ Health endpoints available:
 
 ## Railway service unavailable health-check fix
 
-Version 1.2.36 removes the Railway health-check gate from `railway.json` to avoid deployment failure loops while Railway is starting the container.
+Version 1.2.37 removes the Railway health-check gate from `railway.json` to avoid deployment failure loops while Railway is starting the container.
 
 Important Railway settings:
 
@@ -297,11 +297,11 @@ Password: adm123
 The Railway URL and local app now open with a login screen first. Admin users can create, edit, deactivate, and delete users from the Users page.
 
 
-## 1.2.36 Fix
+## 1.2.37 Fix
 - Access Demo dialog now gracefully opens simulator even if lead-capture API temporarily returns `Failed to fetch`.
 - POST `/api/leads` remains public for landing page capture; GET `/api/leads` is protected behind login.
 
-## Version 1.2.36 Localhost Startup Fix
+## Version 1.2.37 Localhost Startup Fix
 
 If Vite shows this error:
 
@@ -331,13 +331,13 @@ Password: adm123
 ```
 
 
-## 1.2.36 Admin Leads Page Fix
+## 1.2.37 Admin Leads Page Fix
 - Leads page is visible only to admin users.
 - Users page is visible only to admin users.
 - Leads page now handles empty records, loading, missing fields, and API errors safely.
 
 
-## 1.2.36 Updates
+## 1.2.37 Updates
 
 - Added configurable static text table under Settings for major landing page, dialog, login, and footer copy.
 - Leads page now uses a formatted table with click-to-view details, CSV export, and print options.
